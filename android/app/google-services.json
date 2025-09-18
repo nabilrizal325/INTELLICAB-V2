@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1051870563325",
+    "project_id": "intellicab-fe3b6",
+    "storage_bucket": "intellicab-fe3b6.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1051870563325:android:9b410fcf212e69eb67a794",
+        "android_client_info": {
+          "package_name": "com.gmi.intellicab"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBtEyFaEiKVSkRUXlWdB9xxqzQkBgQYXuM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
