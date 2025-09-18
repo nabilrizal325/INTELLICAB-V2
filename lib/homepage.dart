@@ -13,52 +13,46 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  int _selectedIndex = 0; // controls nav state
-  late final DocumentReference userDoc;
-
-  @override
-  void initState() {
-    super.initState();
-    final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser != null) {
-      userDoc = FirebaseFirestore.instance.collection("User").doc(currentUser.uid);
-    }
-  }
-
-  Future<DocumentSnapshot> _getUserData() async {
-    return await userDoc.get(); // Loads once instead of streaming
-  }
+  int _selectedIndex = 0; // 👈 controls nav state
 
   @override
   Widget build(BuildContext context) {
     final currentUser = FirebaseAuth.instance.currentUser;
+
     if (currentUser == null) {
       return const Scaffold(
         body: Center(child: Text("Not logged in")),
       );
     }
 
+    final userDoc =
+        FirebaseFirestore.instance.collection("User").doc(currentUser.uid);
+
     return Scaffold(
       backgroundColor: const Color.fromARGB(255, 248, 207, 255),
+
+      // --- Swap body depending on nav selection ---
       body: IndexedStack(
-        index: _selectedIndex == 2 ? 1 : 0,
+        index: _selectedIndex == 2 ? 1 : 0, // 👈 map: 0=Home, 2=Grocery
         children: [
+          // --- Home Inventory Page ---
           SafeArea(
-            child: FutureBuilder<DocumentSnapshot>(
-              future: _getUserData(),
+            child: StreamBuilder<DocumentSnapshot>(
+              stream: userDoc.snapshots(),
               builder: (context, userSnapshot) {
                 if (!userSnapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                final userData = userSnapshot.data!.data() as Map<String, dynamic>;
+                final userData =
+                    userSnapshot.data!.data() as Map<String, dynamic>;
                 final username = userData["username"] ?? "User";
                 final profilePic = userData["profilePicture"];
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Header - only loads once
+                    // --- Header ---
                     Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: Row(
@@ -77,53 +71,95 @@ class _HomePageState extends State<HomePage> {
                                 },
                                 child: CircleAvatar(
                                   backgroundColor: Colors.pink.shade100,
+
                                   radius: 24,
-                                  backgroundImage: profilePic != null ? NetworkImage(profilePic) : null,
-                                  child: profilePic == null ? Text(username[0].toUpperCase()) : null,
+                                  backgroundImage: profilePic != null
+                                      ? NetworkImage(profilePic)
+                                      : null,
+                                  child: profilePic == null
+                                      ? Text(username[0].toUpperCase())
+                                      : null,
                                 ),
                               ),
                               const SizedBox(width: 12),
-                              Text("Hi $username!", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    "Hi $username!",
+                                    style: const TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ],
                           ),
                           Row(
                             children: [
-                              IconButton(icon: const Icon(Icons.notifications_none), onPressed: () {}),
-                              IconButton(icon: const Icon(Icons.settings), onPressed: () {}),
+                              IconButton(
+                                icon: const Icon(Icons.notifications_none),
+                                onPressed: () {},
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.settings),
+                                onPressed: () {},
+                              ),
                             ],
-                          )
+                          ),
                         ],
                       ),
                     ),
 
                     const Padding(
                       padding: EdgeInsets.symmetric(horizontal: 16.0),
-                      child: Text("My Inventory", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      child: Text(
+                        "My Inventory",
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
                     ),
                     const SizedBox(height: 16),
 
-                    // Inventory section - still uses real-time updates
+                    // --- Inventory per Cabinet ---
                     Expanded(
                       child: StreamBuilder<QuerySnapshot>(
                         stream: userDoc.collection("inventory").snapshots(),
                         builder: (context, snapshot) {
                           if (!snapshot.hasData) {
-                            return const Center(child: CircularProgressIndicator());
+                            return const Center(
+                                child: CircularProgressIndicator());
                           }
 
                           final products = snapshot.data!.docs;
+
                           if (products.isEmpty) {
                             return const Center(
-                              child: Text("Nothing in inventory yet.",
-                                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                              child: Text(
+                                "Nothing in inventory yet.",
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.black,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
                             );
                           }
 
-                          final Map<String, List<Map<String, dynamic>>> cabinetGroups = {};
+                          // Group products by cabinetId
+                          final Map<String, List<Map<String, dynamic>>>
+                              cabinetGroups = {};
+
                           for (var doc in products) {
                             final data = doc.data() as Map<String, dynamic>;
-                            final cabinetId = data["cabinetId"] ?? "Uncategorized";
-                            cabinetGroups.putIfAbsent(cabinetId, () => []).add(data);
+                            final cabinetId =
+                                data["cabinetId"] ?? "Uncategorized";
+
+                            if (!cabinetGroups.containsKey(cabinetId)) {
+                              cabinetGroups[cabinetId] = [];
+                            }
+                            cabinetGroups[cabinetId]!.add(data);
                           }
 
                           return ListView(
@@ -131,7 +167,10 @@ class _HomePageState extends State<HomePage> {
                             children: cabinetGroups.entries.map((entry) {
                               return InventorySection(
                                 title: entry.key,
-                                labels: entry.value.map((p) => "${p["brand"] ?? ""} ${p["name"] ?? ""}").toList(),
+                                labels: entry.value
+                                    .map((p) =>
+                                        "${p["brand"] ?? ""} ${p["name"] ?? ""}")
+                                    .toList(),
                               );
                             }).toList(),
                           );
@@ -144,30 +183,35 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
 
-          // Grocery List Page
+          // --- Grocery List Page ---
           const GorceryList(),
         ],
       ),
 
+      // --- Bottom Nav ---
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (index) {
           if (index == 1) {
+            // 👇 Scan → open as a new page
             Navigator.push(
               context,
               MaterialPageRoute(builder: (context) => const AddItemPage()),
             );
           } else {
+            // 👇 Home (0) or Grocery (2) → just swap
             setState(() => _selectedIndex = index);
           }
         },
-        backgroundColor: Colors.white,
+        backgroundColor: const Color.fromARGB(255, 255, 255, 255),
         selectedItemColor: const Color.fromARGB(225, 224, 15, 255),
         unselectedItemColor: Colors.black,
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home"),
-          BottomNavigationBarItem(icon: Icon(Icons.qr_code_scanner), label: "Scan"),
-          BottomNavigationBarItem(icon: Icon(Icons.list_alt), label: "Grocery List"),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.qr_code_scanner), label: "Scan"),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.list_alt), label: "Grocery List"),
         ],
       ),
     );
@@ -178,7 +222,11 @@ class InventorySection extends StatelessWidget {
   final String title;
   final List<String> labels;
 
-  const InventorySection({super.key, required this.title, required this.labels});
+  const InventorySection({
+    super.key,
+    required this.title,
+    required this.labels,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -190,8 +238,14 @@ class InventorySection extends StatelessWidget {
         child: const Center(
           child: Padding(
             padding: EdgeInsets.all(12),
-            child: Text("Nothing in inventory yet.",
-                style: TextStyle(color: Colors.black, fontSize: 14, fontWeight: FontWeight.w500)),
+            child: Text(
+              "Nothing in inventory yet.",
+              style: TextStyle(
+                color: Colors.black,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
         ),
       );
@@ -206,7 +260,9 @@ class InventorySection extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            Text(title,
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -216,8 +272,11 @@ class InventorySection extends StatelessWidget {
                     CircleAvatar(
                       radius: 30,
                       backgroundColor: Colors.pink.shade100,
-                      child: Text(labels[index][0].toUpperCase(),
-                          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                      child: Text(
+                        labels[index][0].toUpperCase(),
+                        style: const TextStyle(
+                            fontSize: 20, fontWeight: FontWeight.bold),
+                      ),
                     ),
                     const SizedBox(height: 6),
                     SizedBox(
