@@ -260,38 +260,46 @@ class InventorySection extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title,
-                style:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            Text(
+              title,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: List.generate(labels.length, (index) {
-                return Column(
-                  children: [
-                    CircleAvatar(
-                      radius: 30,
-                      backgroundColor: Colors.pink.shade100,
-                      child: Text(
-                        labels[index][0].toUpperCase(),
-                        style: const TextStyle(
-                            fontSize: 20, fontWeight: FontWeight.bold),
-                      ),
+
+            // 👇 Wrap the Row in a horizontal scroll view
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: List.generate(labels.length, (index) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Column(
+                      children: [
+                        CircleAvatar(
+                          radius: 30,
+                          backgroundColor: Colors.pink.shade100,
+                          child: Text(
+                            labels[index][0].toUpperCase(),
+                            style: const TextStyle(
+                                fontSize: 20, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        SizedBox(
+                          width: 80,
+                          child: Text(
+                            labels[index],
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 12),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 6),
-                    SizedBox(
-                      width: 80,
-                      child: Text(
-                        labels[index],
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 12),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                );
-              }),
+                  );
+                }),
+              ),
             ),
           ],
         ),
@@ -299,3 +307,4 @@ class InventorySection extends StatelessWidget {
     );
   }
 }
+
