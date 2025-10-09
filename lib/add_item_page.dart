@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intellicab/manual_entry.dart';
 import 'package:mobile_scanner/mobile_scanner.dart' as mobile;
 import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart' as mlkit;
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -122,6 +123,7 @@ void _onBarcodeDetected(mobile.BarcodeCapture capture) async {
     }
   }
 
+
   /// 🔹 Process scanned barcode: fetch from global, then add to user inventory
   Future<void> _processScannedBarcode(String barcode) async {
     try {
@@ -141,7 +143,7 @@ void _onBarcodeDetected(mobile.BarcodeCapture capture) async {
       final brand = globalData['brand'];
       final name = globalData['name'];
 
-      // Step 2: Ask user for expiry date
+      // Step 3: Ask user for expiry date
       final expiryDate = await _askForExpiryDate();
       if (expiryDate == null) return;
 
@@ -158,18 +160,19 @@ void _onBarcodeDetected(mobile.BarcodeCapture capture) async {
         // If item already exists → increment quantity and add expiry
         await userInvRef.update({
           'quantity': FieldValue.increment(1),
-          'expiryDates': FieldValue.arrayUnion([expiryDate]),
+          'expiryDates': FieldValue.arrayUnion([expiryDate]), // Store as string
           'lastUpdated': FieldValue.serverTimestamp(),
         });
       } else {
-        // New item
+        // New item - store in unorganized cabinet
         await userInvRef.set({
           'barcode': barcode,
           'brand': brand,
           'name': name,
           'quantity': 1,
-          'expiryDates': [expiryDate],
-          'location': 'cabinet_1', // or set dynamically
+          'expiryDates': [expiryDate], // Store as string
+          'cabinetName': 'unorganized',
+          'location': 'out',
           'created_at': FieldValue.serverTimestamp(),
           'lastUpdated': FieldValue.serverTimestamp(),
         });
@@ -184,19 +187,64 @@ void _onBarcodeDetected(mobile.BarcodeCapture capture) async {
 
   /// 🔹 Popup for expiry date input
   Future<String?> _askForExpiryDate() async {
-  final now = DateTime.now();
-  final picked = await showDatePicker(
-    context: context,
-    initialDate: now,
-    firstDate: now,
-    lastDate: DateTime(2100),
-  );
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Enter Expiry Date'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Format: dd-mm-yyyy\nExample: 25-12-2025',
+              style: TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                hintText: 'dd-mm-yyyy',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
 
-  if (picked != null) {
-    return picked.toIso8601String(); // Or picked.millisecondsSinceEpoch.toString()
+    if (result != null) {
+      try {
+        // Validate the date format (dd-mm-yyyy)
+        final parts = result.split('-');
+        if (parts.length != 3) throw FormatException('Invalid date format');
+        
+        final day = int.parse(parts[0]);
+        final month = int.parse(parts[1]);
+        final year = int.parse(parts[2]);
+        
+        // Basic date validation
+        if (day < 1 || day > 31 || month < 1 || month > 12 || year < 2023) {
+          throw FormatException('Invalid date values');
+        }
+        
+        return result; // Return the original string input
+      } catch (e) {
+        _showErrorDialog('Invalid date format. Please use dd-mm-yyyy');
+        return null;
+      }
+    }
+    return null;
   }
-  return null;
-}
 
 
   /// 🔹 Helper dialogs
@@ -271,7 +319,7 @@ void _onBarcodeDetected(mobile.BarcodeCapture capture) async {
           ),
           const SizedBox(height: 20),
           Expanded(
-            child: isScanMode ? _buildScanUI() : _buildManualPlaceholder(),
+            child: isScanMode ? _buildScanUI() : ManualEntryForm(),
           ),
         ],
       ),
@@ -341,15 +389,6 @@ void _onBarcodeDetected(mobile.BarcodeCapture capture) async {
             Text("Detected: $scannedCode"),
           ]
         ],
-      ),
-    );
-  }
-
-  Widget _buildManualPlaceholder() {
-    return const Center(
-      child: Text(
-        "Manual entry form coming soon...",
-        style: TextStyle(fontSize: 16, fontStyle: FontStyle.italic),
       ),
     );
   }

@@ -1,0 +1,11 @@
+[33mcommit d901a425260450ff26a7f3e46fa29fcbfa15e168[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m
+Author: Nabil Rizal <nabilhakim05@gmail.com>
+Date:   Thu Sep 18 17:56:11 2025 +0800
+
+    updated homepage (no more keep refreshing)
+
+[33mcommit b49d0383721ae5e1e2fbb8253a1825f1194c7552[m
+Author: Nabil Rizal <nabilhakim05@gmail.com>
+Date:   Thu Sep 18 17:43:13 2025 +0800
+
+    Initial commit of Flutter project

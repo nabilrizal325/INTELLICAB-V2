@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intellicab/add_item_page.dart';
+import 'package:intellicab/cabinet_details_page.dart';
 import 'package:intellicab/gorcery_list.dart';
 import 'profile_page.dart';
 
@@ -86,7 +87,7 @@ class _HomePageState extends State<HomePage> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    "Hi $username!",
+                                    "Hi $username",
                                     style: const TextStyle(
                                       fontSize: 20,
                                       fontWeight: FontWeight.bold,
@@ -153,13 +154,13 @@ class _HomePageState extends State<HomePage> {
 
                           for (var doc in products) {
                             final data = doc.data() as Map<String, dynamic>;
-                            final cabinetId =
-                                data["cabinetId"] ?? "Uncategorized";
+                            final cabinetName =
+                                data["cabinetName"] ?? "Uncategorized";
 
-                            if (!cabinetGroups.containsKey(cabinetId)) {
-                              cabinetGroups[cabinetId] = [];
+                            if (!cabinetGroups.containsKey(cabinetName)) {
+                              cabinetGroups[cabinetName] = [];
                             }
-                            cabinetGroups[cabinetId]!.add(data);
+                            cabinetGroups[cabinetName]!.add(data);
                           }
 
                           return ListView(
@@ -171,6 +172,7 @@ class _HomePageState extends State<HomePage> {
                                     .map((p) =>
                                         "${p["brand"] ?? ""} ${p["name"] ?? ""}")
                                     .toList(),
+                                items: entry.value,
                               );
                             }).toList(),
                           );
@@ -184,7 +186,7 @@ class _HomePageState extends State<HomePage> {
           ),
 
           // --- Grocery List Page ---
-          const GorceryList(),
+          GroceryList(),
         ],
       ),
 
@@ -221,11 +223,13 @@ class _HomePageState extends State<HomePage> {
 class InventorySection extends StatelessWidget {
   final String title;
   final List<String> labels;
+  final List<Map<String, dynamic>> items;
 
   const InventorySection({
     super.key,
     required this.title,
     required this.labels,
+    required this.items,
   });
 
   @override
@@ -251,51 +255,87 @@ class InventorySection extends StatelessWidget {
       );
     }
 
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      color: Colors.white,
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => CabinetDetailsPage(
+              title: title,
+              items: items,
             ),
-            const SizedBox(height: 12),
+          ),
+        );
+      },
+      child: Card(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        color: Colors.white,
+        elevation: 2,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    '${items.length} items',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
 
-            // 👇 Wrap the Row in a horizontal scroll view
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: List.generate(labels.length, (index) {
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: Column(
-                      children: [
-                        CircleAvatar(
-                          radius: 30,
-                          backgroundColor: Colors.pink.shade100,
-                          child: Text(
-                            labels[index][0].toUpperCase(),
-                            style: const TextStyle(
-                                fontSize: 20, fontWeight: FontWeight.bold),
+              // 👇 Wrap the Row in a horizontal scroll view
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: List.generate(labels.length, (index) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Column(
+                        children: [
+                          CircleAvatar(
+                            radius: 30,
+                            backgroundColor: Colors.pink.shade100,
+                            child: items[index]['imageUrl'] != null
+                                ? ClipOval(
+                                    child: Image.network(
+                                      items[index]['imageUrl'],
+                                      width: 60,
+                                      height: 60,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  )
+                                : Text(
+                                    labels[index][0].toUpperCase(),
+                                    style: const TextStyle(
+                                        fontSize: 20, fontWeight: FontWeight.bold),
+                                  ),
                           ),
-                        ),
-                        const SizedBox(height: 6),
-                        SizedBox(
-                          width: 80,
-                          child: Text(
-                            labels[index],
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontSize: 12),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+                          const SizedBox(height: 6),
+                          SizedBox(
+                            width: 80,
+                            child: Text(
+                              labels[index],
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(fontSize: 12),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   );
                 }),
@@ -304,6 +344,7 @@ class InventorySection extends StatelessWidget {
           ],
         ),
       ),
+    ),
     );
   }
 }
