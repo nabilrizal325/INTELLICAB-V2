@@ -4,7 +4,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intellicab/add_item_page.dart';
 import 'package:intellicab/cabinet_details_page.dart';
 import 'package:intellicab/gorcery_list.dart';
+import 'package:intellicab/notifications_page.dart'; // Add this import
 import 'profile_page.dart';
+import 'package:intl/intl.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -14,7 +16,53 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  int _selectedIndex = 0; // 👈 controls nav state
+  int _selectedIndex = 0;
+  int _expiringItemsCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadExpiringItemsCount();
+  }
+
+  Future<void> _loadExpiringItemsCount() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final snapshot = await FirebaseFirestore.instance
+        .collection('User')
+        .doc(user.uid)
+        .collection('inventory')
+        .get();
+
+    final now = DateTime.now();
+    int count = 0;
+
+    for (var doc in snapshot.docs) {
+      final data = doc.data();
+      final expiryDateStr = data['expiryDate'];
+      
+      if (expiryDateStr != null) {
+        try {
+          final expiryDate = DateFormat('dd/MM/yyyy').parse(expiryDateStr);
+          final daysUntilExpiry = expiryDate.difference(now).inDays;
+
+          // Count items expiring in 7 days or less
+          if (daysUntilExpiry <= 7 && daysUntilExpiry >= 0) {
+            count++;
+          }
+        } catch (e) {
+          debugPrint('Error parsing date: $e');
+        }
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _expiringItemsCount = count;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -32,11 +80,10 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       backgroundColor: const Color.fromARGB(255, 248, 207, 255),
 
-      // --- Swap body depending on nav selection ---
       body: IndexedStack(
-        index: _selectedIndex == 2 ? 1 : 0, // 👈 map: 0=Home, 2=Grocery
+        index: _selectedIndex == 2 ? 1 : 0,
         children: [
-          // --- Home Inventory Page ---
+          // Home Inventory Page
           SafeArea(
             child: StreamBuilder<DocumentSnapshot>(
               stream: userDoc.snapshots(),
@@ -53,7 +100,7 @@ class _HomePageState extends State<HomePage> {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // --- Header ---
+                    // Header
                     Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: Row(
@@ -72,7 +119,6 @@ class _HomePageState extends State<HomePage> {
                                 },
                                 child: CircleAvatar(
                                   backgroundColor: Colors.pink.shade100,
-
                                   radius: 24,
                                   backgroundImage: profilePic != null
                                       ? NetworkImage(profilePic)
@@ -99,9 +145,49 @@ class _HomePageState extends State<HomePage> {
                           ),
                           Row(
                             children: [
-                              IconButton(
-                                icon: const Icon(Icons.notifications_none),
-                                onPressed: () {},
+                              // Notifications Icon with Badge
+                              Stack(
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.notifications_none),
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => const NotificationsPage(),
+                                        ),
+                                      ).then((_) {
+                                        // Refresh count when returning from notifications
+                                        _loadExpiringItemsCount();
+                                      });
+                                    },
+                                  ),
+                                  if (_expiringItemsCount > 0)
+                                    Positioned(
+                                      right: 8,
+                                      top: 8,
+                                      child: Container(
+                                        padding: const EdgeInsets.all(2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.red,
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
+                                        constraints: const BoxConstraints(
+                                          minWidth: 16,
+                                          minHeight: 16,
+                                        ),
+                                        child: Text(
+                                          _expiringItemsCount > 9 ? '9+' : _expiringItemsCount.toString(),
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ),
+                                    ),
+                                ],
                               ),
                               IconButton(
                                 icon: const Icon(Icons.settings),
@@ -123,7 +209,52 @@ class _HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(height: 16),
 
-                    // --- Inventory per Cabinet ---
+                    // Show expiring items warning banner
+                    if (_expiringItemsCount > 0)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                        child: GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const NotificationsPage(),
+                              ),
+                            ).then((_) {
+                              _loadExpiringItemsCount();
+                            });
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.shade100,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.orange),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.warning_amber, color: Colors.orange[800]),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    '$_expiringItemsCount item${_expiringItemsCount > 1 ? 's' : ''} expiring soon!',
+                                    style: TextStyle(
+                                      color: Colors.orange[800],
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                Icon(Icons.arrow_forward_ios, 
+                                    color: Colors.orange[800], size: 16),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+
+                    if (_expiringItemsCount > 0) const SizedBox(height: 16),
+
+                    // Inventory per Cabinet
                     Expanded(
                       child: StreamBuilder<QuerySnapshot>(
                         stream: userDoc.collection("inventory").snapshots(),
@@ -185,23 +316,20 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
 
-          // --- Grocery List Page ---
+          // Grocery List Page
           GroceryList(),
         ],
       ),
 
-      // --- Bottom Nav ---
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (index) {
           if (index == 1) {
-            // 👇 Scan → open as a new page
             Navigator.push(
               context,
               MaterialPageRoute(builder: (context) => const AddItemPage()),
             );
           } else {
-            // 👇 Home (0) or Grocery (2) → just swap
             setState(() => _selectedIndex = index);
           }
         },
@@ -220,6 +348,7 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
+// Your existing InventorySection class remains the same...
 class InventorySection extends StatelessWidget {
   final String title;
   final List<String> labels;
@@ -294,14 +423,11 @@ class InventorySection extends StatelessWidget {
               ),
               const SizedBox(height: 12),
 
-              // 👇 Wrap the Row in a horizontal scroll view
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: List.generate(labels.length, (index) {
                     return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       child: Column(
                         children: [
@@ -336,16 +462,14 @@ class InventorySection extends StatelessWidget {
                           ),
                         ],
                       ),
-                    ),
-                  );
-                }),
+                    );
+                  }),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
     );
   }
 }
-
