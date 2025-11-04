@@ -11,6 +11,18 @@ class CabinetDetailsPage extends StatelessWidget {
     required this.items,
   });
 
+  // ✅ Helper method to safely format timestamp
+  String _formatDate(dynamic timeStamp) {
+    if (timeStamp == null) return 'Unknown';
+    if (timeStamp is Timestamp) {
+      return timeStamp.toDate().toString().split(' ')[0];
+    } else if (timeStamp is String) {
+      return timeStamp.split(' ')[0];
+    } else {
+      return 'Unknown';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -37,7 +49,7 @@ class CabinetDetailsPage extends StatelessWidget {
           final item = items[index];
           return Container(
             margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(12),  
+            padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: const Color.fromARGB(255, 248, 207, 255),
               borderRadius: BorderRadius.circular(16),
@@ -97,7 +109,7 @@ class CabinetDetailsPage extends StatelessWidget {
                               const SizedBox(width: 10),
                               if (item['timeStamp'] != null)
                                 Text(
-                                  'Added: ${(item['timeStamp'] as Timestamp).toDate().toString().split(' ')[0]}',
+                                  'Added: ${_formatDate(item['timeStamp'])}',
                                   style: const TextStyle(fontSize: 14),
                                 ),
                             ],
