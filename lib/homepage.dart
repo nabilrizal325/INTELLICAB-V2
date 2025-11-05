@@ -149,23 +149,41 @@ class _HomePageState extends State<HomePage> {
         notifyIds.add(doc.id);
       }
 
-      // Check expiry (support expiryDates array or expiryDates string)
-      final expiryField = data['expiryDates'];
+      // Check expiry (support expiryDates array or expiryDate)
+      final expiryField = data['expiryDates'] ?? data['expiryDate'];
       String? expiryDateStr;
       if (expiryField is List && expiryField.isNotEmpty) {
         expiryDateStr = expiryField.first?.toString();
-      } else if (expiryField is String) {
-        expiryDateStr = expiryField;
+      } else if (expiryField != null) {
+        expiryDateStr = expiryField.toString();
       }
+
       if (expiryDateStr != null && expiryDateStr.isNotEmpty) {
+        DateTime? expiryDate;
         try {
-          final expiryDate = DateFormat('dd/MM/yyyy').parse(expiryDateStr);
-          final daysUntilExpiry = expiryDate.difference(now).inDays;
-          if (daysUntilExpiry <= 7 && daysUntilExpiry >= 0) {
-            notifyIds.add(doc.id);
+          // Try formats in order: dd-MM-yyyy, dd/MM/yyyy
+          for (final format in ['dd-MM-yyyy', 'dd/MM/yyyy']) {
+            try {
+              expiryDate = DateFormat(format).parse(expiryDateStr);
+              break;
+            } catch (_) {
+              continue;
+            }
+          }
+
+          if (expiryDate != null) {
+            // Normalize to start of day for accurate comparison
+            final startOfExpiry = DateTime(expiryDate.year, expiryDate.month, expiryDate.day);
+            final startOfToday = DateTime(now.year, now.month, now.day);
+            final daysUntilExpiry = startOfExpiry.difference(startOfToday).inDays;
+            
+            if (daysUntilExpiry <= 7 && daysUntilExpiry >= 0) {
+              notifyIds.add(doc.id);
+              debugPrint('Adding to notify: ${data['name']} (expires in $daysUntilExpiry days)');
+            }
           }
         } catch (e) {
-          debugPrint('Error parsing date: $e');
+          debugPrint('Error parsing date "$expiryDateStr": $e');
         }
       }
     }
@@ -323,7 +341,7 @@ class _HomePageState extends State<HomePage> {
                     const SizedBox(height: 16),
 
                     // Show expiring items warning banner
-                    if (_expiringItemsCount > 0)
+                    /*if (_expiringItemsCount > 0)
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16.0),
                         child: GestureDetector(
@@ -363,7 +381,7 @@ class _HomePageState extends State<HomePage> {
                             ),
                           ),
                         ),
-                      ),
+                      ),*/
 
                     if (_expiringItemsCount > 0) const SizedBox(height: 16),
 

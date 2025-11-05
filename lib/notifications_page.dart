@@ -38,13 +38,17 @@ class _NotificationsPageState extends State<NotificationsPage> {
     }
 
     final snapshot = await userDocRef.collection('inventory').get();
+    // Use start of today for more accurate day comparisons
     final now = DateTime.now();
+    final startOfToday = DateTime(now.year, now.month, now.day);
 
     final expiring = <Map<String, dynamic>>[];
     final lowStock = <Map<String, dynamic>>[];
 
     for (var doc in snapshot.docs) {
       final data = doc.data();
+      final itemName = '${data['brand'] ?? ''} ${data['name'] ?? ''}'.trim();
+      debugPrint('\n--- Item: $itemName ---');
 
       // Quantity handling
       final qtyField = data['quantity'];
@@ -57,35 +61,61 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
       if (qty <= reminderLevel) {
         lowStock.add({...data, 'id': doc.id, 'quantity': qty});
+        debugPrint('Added to low stock list: $itemName (qty: $qty)');
       }
 
-      // Expiry handling
-        final expiryField = data['expiryDates'];
-        String? expiryDateStr;
-        if (expiryField is List && expiryField.isNotEmpty) {
-          expiryDateStr = expiryField.first?.toString();
-        } else if (expiryField is String) {
-          expiryDateStr = expiryField;
-        }
+      // Expiry handling - check both expiryDates and expiryDate
+      final expiryField = data['expiryDates'] ?? data['expiryDate'];
+      debugPrint('Raw expiry field: $expiryField (type: ${expiryField?.runtimeType})');
+      
+      String? expiryDateStr;
+      if (expiryField is List && expiryField.isNotEmpty) {
+        expiryDateStr = expiryField.first?.toString();
+        debugPrint('Parsed from List: $expiryDateStr');
+      } else if (expiryField != null) {
+        expiryDateStr = expiryField.toString();
+        debugPrint('Using value as string: $expiryDateStr');
+      }
 
-        if (expiryDateStr != null && expiryDateStr.isNotEmpty) {
-          try {
-            final expiryDate = DateFormat('dd/MM/yyyy').parse(expiryDateStr);
-            final daysUntilExpiry = expiryDate.difference(now).inDays;
+      if (expiryDateStr != null && expiryDateStr.isNotEmpty) {
+        DateTime? expiryDate;
+        try {
+          // Try formats in order: dd-MM-yyyy, dd/MM/yyyy
+          for (final format in ['dd-MM-yyyy', 'dd/MM/yyyy']) {
+            try {
+              expiryDate = DateFormat(format).parse(expiryDateStr);
+              debugPrint('Successfully parsed with format $format: $expiryDate');
+              break;
+            } catch (_) {
+              debugPrint('Failed to parse with format $format, trying next...');
+            }
+          }
+
+          if (expiryDate != null) {
+            // Normalize expiry date to start of day for accurate day comparison
+            final startOfExpiry = DateTime(expiryDate.year, expiryDate.month, expiryDate.day);
+            final daysUntilExpiry = startOfExpiry.difference(startOfToday).inDays;
+            debugPrint('Days until expiry: $daysUntilExpiry (today: ${startOfToday.day}/${startOfToday.month}, expiry: ${startOfExpiry.day}/${startOfExpiry.month})');
 
             // Show items expiring in 7 days or less
             if (daysUntilExpiry <= 7 && daysUntilExpiry >= 0) {
+              debugPrint('Added to expiring list: $itemName (expires in $daysUntilExpiry days)');
               expiring.add({
                 ...data,
                 'id': doc.id,
                 'daysUntilExpiry': daysUntilExpiry,
                 'expiryDateObj': expiryDate,
               });
+            } else {
+              debugPrint('Not expiring soon: $daysUntilExpiry days until expiry');
             }
-          } catch (e) {
-            debugPrint('Error parsing date: $e');
           }
+        } catch (e) {
+          debugPrint('Error parsing date "$expiryDateStr": $e');
         }
+      } else {
+        debugPrint('No valid expiry date found');
+      }
     }
 
     // Sort lists
