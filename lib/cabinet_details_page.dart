@@ -11,13 +11,13 @@ class CabinetDetailsPage extends StatelessWidget {
     required this.items,
   });
 
-  // ✅ Helper method to safely format timestamp
-  String _formatDate(dynamic timeStamp) {
-    if (timeStamp == null) return 'Unknown';
-    if (timeStamp is Timestamp) {
-      return timeStamp.toDate().toString().split(' ')[0];
-    } else if (timeStamp is String) {
-      return timeStamp.split(' ')[0];
+  // ✅ Helper to format date fields safely
+  String _formatDate(dynamic dateValue) {
+    if (dateValue == null) return 'Unknown';
+    if (dateValue is Timestamp) {
+      return dateValue.toDate().toString().split(' ')[0];
+    } else if (dateValue is String) {
+      return dateValue.split(' ')[0];
     } else {
       return 'Unknown';
     }
@@ -47,6 +47,7 @@ class CabinetDetailsPage extends StatelessWidget {
         itemCount: items.length,
         itemBuilder: (context, index) {
           final item = items[index];
+
           return Container(
             margin: const EdgeInsets.only(bottom: 12),
             padding: const EdgeInsets.all(12),
@@ -54,90 +55,87 @@ class CabinetDetailsPage extends StatelessWidget {
               color: const Color.fromARGB(255, 248, 207, 255),
               borderRadius: BorderRadius.circular(16),
             ),
-            child: Column(
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Image
-                    Container(
-                      width: 60,
-                      height: 60,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(8),
-                        color: Colors.white,
-                      ),
-                      child: item['imageUrl'] != null
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: Image.network(
-                                item['imageUrl'],
-                                fit: BoxFit.cover,
-                              ),
-                            )
-                          : const Icon(Icons.image_not_supported, color: Colors.grey),
-                    ),
-                    const SizedBox(width: 12),
+                // ✅ Image
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    color: Colors.white,
+                  ),
+                  child: item['imageUrl'] != null
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.network(item['imageUrl'], fit: BoxFit.cover),
+                        )
+                      : const Icon(Icons.image_not_supported, color: Colors.grey),
+                ),
+                const SizedBox(width: 12),
 
-                    // Item info
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            item['brand'] ?? '',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            item['name'] ?? 'Unnamed Item',
+                // ✅ Info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item['brand'] ?? 'Unknown Brand',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        item['name'] ?? 'Unnamed Item',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: Colors.black,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Qty: ${item['quantity'] ?? 0}',
+                        style: const TextStyle(fontSize: 14),
+                      ),
+
+                      // ✅ Added date
+                      if (item['created_at'] != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            'Added: ${_formatDate(item['created_at'])}',
                             style: const TextStyle(
                               fontSize: 14,
-                              color: Colors.black,
+                              color: Colors.black87,
                             ),
                           ),
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              Text(
-                                'Qty: ${item['quantity'] ?? 0}',
-                                style: const TextStyle(fontSize: 14),
-                              ),
-                              const SizedBox(width: 10),
-                              if (item['timeStamp'] != null)
-                                Text(
-                                  'Added: ${_formatDate(item['timeStamp'])}',
-                                  style: const TextStyle(fontSize: 14),
-                                ),
-                            ],
-                          ),
-                          if (item['expiryDates'] != null)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Text(
-                                'Exp: ${item['expiryDates']}',
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.black,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
+                        ),
 
-                    // Edit button
-                    IconButton(
-                      icon: const Icon(Icons.edit_outlined, color: Colors.black),
-                      onPressed: () {
-                        // TODO: Implement edit functionality
-                      },
-                    ),
-                  ],
+                      // ✅ Expiry date
+                      if (item['expiryDate'] != null && item['expiryDate'] != "")
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            'Expiry: ${item['expiryDate']}',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: Colors.redAccent,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+
+                // ✅ Edit button placeholder
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined, color: Colors.black),
+                  onPressed: () {
+                    // TODO: Implement edit functionality
+                  },
                 ),
               ],
             ),
