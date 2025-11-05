@@ -102,7 +102,8 @@ class _ManualEntryFormState extends State<ManualEntryForm> {
         'name': _nameController.text.trim(),
         'brand': _brandController.text.trim(),
         'quantity': int.tryParse(_quantityController.text) ?? 0,
-        'expiryDate': _expiryController.text.trim(),
+        // Store expiry dates as an array to match project convention
+        'expiryDates': [_expiryController.text.trim()],
         'cabinetId': 'unorganized',
         'isItemIn': false,
         'timeStamp': DateFormat("dd/MM/yyyy").format(DateTime.now()),

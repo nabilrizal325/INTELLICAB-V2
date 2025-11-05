@@ -60,23 +60,32 @@ class _NotificationsPageState extends State<NotificationsPage> {
       }
 
       // Expiry handling
-      final expiryDateStr = data['expiryDate'];
-      if (expiryDateStr != null) {
-        try {
-          final expiryDate = DateFormat('dd/MM/yyyy').parse(expiryDateStr);
-          final daysUntilExpiry = expiryDate.difference(now).inDays;
-          if (daysUntilExpiry <= 7 && daysUntilExpiry >= 0) {
-            expiring.add({
-              ...data,
-              'id': doc.id,
-              'daysUntilExpiry': daysUntilExpiry,
-              'expiryDateObj': expiryDate,
-            });
-          }
-        } catch (e) {
-          debugPrint('Error parsing date: $e');
+        final expiryField = data['expiryDates'];
+        String? expiryDateStr;
+        if (expiryField is List && expiryField.isNotEmpty) {
+          expiryDateStr = expiryField.first?.toString();
+        } else if (expiryField is String) {
+          expiryDateStr = expiryField;
         }
-      }
+
+        if (expiryDateStr != null && expiryDateStr.isNotEmpty) {
+          try {
+            final expiryDate = DateFormat('dd/MM/yyyy').parse(expiryDateStr);
+            final daysUntilExpiry = expiryDate.difference(now).inDays;
+
+            // Show items expiring in 7 days or less
+            if (daysUntilExpiry <= 7 && daysUntilExpiry >= 0) {
+              expiring.add({
+                ...data,
+                'id': doc.id,
+                'daysUntilExpiry': daysUntilExpiry,
+                'expiryDateObj': expiryDate,
+              });
+            }
+          } catch (e) {
+            debugPrint('Error parsing date: $e');
+          }
+        }
     }
 
     // Sort lists

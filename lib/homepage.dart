@@ -149,9 +149,15 @@ class _HomePageState extends State<HomePage> {
         notifyIds.add(doc.id);
       }
 
-      // Check expiry
-      final expiryDateStr = data['expiryDate'];
-      if (expiryDateStr != null) {
+      // Check expiry (support expiryDates array or expiryDates string)
+      final expiryField = data['expiryDates'];
+      String? expiryDateStr;
+      if (expiryField is List && expiryField.isNotEmpty) {
+        expiryDateStr = expiryField.first?.toString();
+      } else if (expiryField is String) {
+        expiryDateStr = expiryField;
+      }
+      if (expiryDateStr != null && expiryDateStr.isNotEmpty) {
         try {
           final expiryDate = DateFormat('dd/MM/yyyy').parse(expiryDateStr);
           final daysUntilExpiry = expiryDate.difference(now).inDays;

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 
 class CabinetDetailsPage extends StatefulWidget {
   final String title;
@@ -28,9 +29,22 @@ class _CabinetDetailsPageState extends State<CabinetDetailsPage> {
   String _formatDate(dynamic timeStamp) {
     if (timeStamp == null) return 'Unknown';
     if (timeStamp is Timestamp) {
-      return timeStamp.toDate().toString().split(' ')[0];
+      final dt = timeStamp.toDate();
+      return DateFormat('dd/MM/yyyy').format(dt);
     } else if (timeStamp is String) {
-      return timeStamp.split(' ')[0];
+      final s = timeStamp.trim();
+      // Try parsing common date formats, fallback to returning the raw string
+      final formats = ['dd/MM/yyyy', 'yyyy-MM-dd', 'MM/dd/yyyy'];
+      for (final fmt in formats) {
+        try {
+          final dt = DateFormat(fmt).parseStrict(s);
+          return DateFormat('dd/MM/yyyy').format(dt);
+        } catch (_) {
+          // try next
+        }
+      }
+      // If parsing failed but string is non-empty, return it as-is
+      return s;
     } else {
       return 'Unknown';
     }
@@ -247,11 +261,13 @@ class _CabinetDetailsPageState extends State<CabinetDetailsPage> {
                         'Qty: ${item['quantity'] ?? 0}',
                         style: const TextStyle(fontSize: 14),
                       ),
-                      if (item['expiryDate'] != null && item['expiryDate'] != "")
+                      // Show expiry from expiryDates (array) or expiryDate (fallback)
+                      if ((item['expiryDates'] != null && item['expiryDates'] is List && (item['expiryDates'] as List).isNotEmpty) ||
+                          (item['expiryDate'] != null && item['expiryDate'] != ""))
                         Padding(
                           padding: const EdgeInsets.only(top: 4),
                           child: Text(
-                            'Expiry: ${_formatDate(item['expiryDate'])}',
+                            'Expiry: ${_formatDate((item['expiryDates'] is List && (item['expiryDates'] as List).isNotEmpty) ? (item['expiryDates'] as List).first : item['expiryDate'])}',
                             style: const TextStyle(
                               fontSize: 14,
                               color: Colors.redAccent,
