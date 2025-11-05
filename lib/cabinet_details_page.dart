@@ -158,7 +158,7 @@ class _CabinetDetailsPageState extends State<CabinetDetailsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color.fromARGB(255, 250, 249, 246), // Off-white background
+      backgroundColor: const Color.fromARGB(255, 250, 249, 246),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -206,7 +206,7 @@ class _CabinetDetailsPageState extends State<CabinetDetailsPage> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ✅ Image
+                // 🖼 Image
                 Container(
                   width: 60,
                   height: 60,
@@ -223,7 +223,7 @@ class _CabinetDetailsPageState extends State<CabinetDetailsPage> {
                 ),
                 const SizedBox(width: 12),
 
-                // ✅ Info
+                // 🧾 Info
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -247,26 +247,11 @@ class _CabinetDetailsPageState extends State<CabinetDetailsPage> {
                         'Qty: ${item['quantity'] ?? 0}',
                         style: const TextStyle(fontSize: 14),
                       ),
-
-                      // ✅ Added date
-                      if (item['created_at'] != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(
-                            'Added: ${_formatDate(item['created_at'])}',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              color: Colors.black87,
-                            ),
-                          ),
-                        ),
-
-                      // ✅ Expiry date
                       if (item['expiryDate'] != null && item['expiryDate'] != "")
                         Padding(
                           padding: const EdgeInsets.only(top: 4),
                           child: Text(
-                            'Expiry: ${item['expiryDate']}',
+                            'Expiry: ${_formatDate(item['expiryDate'])}',
                             style: const TextStyle(
                               fontSize: 14,
                               color: Colors.redAccent,
