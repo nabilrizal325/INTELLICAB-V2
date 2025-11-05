@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intellicab/add_item_page.dart';
 import 'package:intellicab/cabinet_details_page.dart';
@@ -18,11 +19,89 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
   int _expiringItemsCount = 0;
+  StreamSubscription<QuerySnapshot>? _inventorySub;
 
   @override
   void initState() {
     super.initState();
     _loadExpiringItemsCount();
+    _setupInventoryListener();
+  }
+
+  void _setupInventoryListener() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final userDocRef = FirebaseFirestore.instance.collection('User').doc(user.uid);
+    final invColl = userDocRef.collection('inventory');
+
+    // Listen for inventory changes and auto-add low-stock items to grocery_list
+    _inventorySub = invColl.snapshots().listen((snap) async {
+      try {
+        // read reminderLevel from user doc (default 1)
+        final userDoc = await userDocRef.get();
+        int reminderLevel = 1;
+        if (userDoc.exists) {
+          final data = userDoc.data();
+          if (data != null && data['reminderLevel'] != null) {
+            try {
+              reminderLevel = (data['reminderLevel'] as num).toInt();
+            } catch (_) {
+              try {
+                reminderLevel = int.parse(data['reminderLevel'].toString());
+              } catch (_) {
+                reminderLevel = 1;
+              }
+            }
+          }
+        }
+
+        for (var doc in snap.docs) {
+          final data = doc.data();
+          final qtyField = data['quantity'];
+          int qty = 0;
+          if (qtyField is num) qty = qtyField.toInt();
+          else if (qtyField is String) qty = int.tryParse(qtyField) ?? 0;
+
+          if (qty <= reminderLevel) {
+            final itemName = '${data['brand'] ?? ''} ${data['name'] ?? ''}'.trim();
+            await _addLowItemToGroceryIfMissing(user.uid, doc.id, itemName);
+          }
+        }
+      } catch (e) {
+        debugPrint('Inventory listener error: $e');
+      }
+    }, onError: (e) {
+      debugPrint('Inventory snapshots error: $e');
+    });
+  }
+
+  Future<void> _addLowItemToGroceryIfMissing(String userId, String inventoryDocId, String itemName) async {
+    try {
+      final firestore = FirebaseFirestore.instance;
+      final groceryRef = firestore.collection('User').doc(userId).collection('grocery_list');
+
+      // Check if there's already an entry linked to this inventory item
+      final q = await groceryRef.where('inventoryId', isEqualTo: inventoryDocId).limit(1).get();
+      if (q.docs.isNotEmpty) return;
+
+      // Optional: check by name to be extra safe
+      if (itemName.isNotEmpty) {
+        final nameQ = await groceryRef.where('name', isEqualTo: itemName).limit(1).get();
+        if (nameQ.docs.isNotEmpty) return;
+      }
+
+      await groceryRef.add({
+        'name': itemName.isNotEmpty ? itemName : 'Unknown item',
+        'checked': false,
+        'addedAt': FieldValue.serverTimestamp(),
+        'inventoryId': inventoryDocId,
+        'autoAdded': true,
+      });
+      debugPrint('Auto-added grocery item for inventory $inventoryDocId');
+    } catch (e) {
+      debugPrint('Error auto-adding grocery item: $e');
+    }
   }
 
   Future<void> _loadExpiringItemsCount() async {
@@ -374,6 +453,12 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _inventorySub?.cancel();
+    super.dispose();
   }
 }
 
