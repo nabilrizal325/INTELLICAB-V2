@@ -28,28 +28,56 @@ class _HomePageState extends State<HomePage> {
   Future<void> _loadExpiringItemsCount() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
+    final userDocRef = FirebaseFirestore.instance.collection('User').doc(user.uid);
 
-    final snapshot = await FirebaseFirestore.instance
-        .collection('User')
-        .doc(user.uid)
-        .collection('inventory')
-        .get();
+    // Load user-configured reminder level (threshold for low-stock). Default to 1.
+    final userDoc = await userDocRef.get();
+    int reminderLevel = 1;
+    if (userDoc.exists) {
+      final data = userDoc.data();
+      if (data != null && data['reminderLevel'] != null) {
+        try {
+          reminderLevel = (data['reminderLevel'] as num).toInt();
+        } catch (_) {
+          try {
+            reminderLevel = int.parse(data['reminderLevel'].toString());
+          } catch (_) {
+            reminderLevel = 1;
+          }
+        }
+      }
+    }
 
+    final snapshot = await userDocRef.collection('inventory').get();
     final now = DateTime.now();
-    int count = 0;
+
+    // Use a set of doc ids so we don't double-count items that are both low-stock and expiring
+    final Set<String> notifyIds = {};
 
     for (var doc in snapshot.docs) {
       final data = doc.data();
+
+      // Check low-stock
+      final qtyField = data['quantity'];
+      int qty = 0;
+      if (qtyField is num) {
+        qty = qtyField.toInt();
+      } else if (qtyField is String) {
+        qty = int.tryParse(qtyField) ?? 0;
+      }
+
+      if (qty <= reminderLevel) {
+        notifyIds.add(doc.id);
+      }
+
+      // Check expiry
       final expiryDateStr = data['expiryDate'];
-      
       if (expiryDateStr != null) {
         try {
           final expiryDate = DateFormat('dd/MM/yyyy').parse(expiryDateStr);
           final daysUntilExpiry = expiryDate.difference(now).inDays;
-
-          // Count items expiring in 7 days or less
           if (daysUntilExpiry <= 7 && daysUntilExpiry >= 0) {
-            count++;
+            notifyIds.add(doc.id);
           }
         } catch (e) {
           debugPrint('Error parsing date: $e');
@@ -59,7 +87,7 @@ class _HomePageState extends State<HomePage> {
 
     if (mounted) {
       setState(() {
-        _expiringItemsCount = count;
+        _expiringItemsCount = notifyIds.length;
       });
     }
   }
@@ -279,31 +307,32 @@ class _HomePageState extends State<HomePage> {
                             );
                           }
 
-                          // Group products by cabinetId
-                          final Map<String, List<Map<String, dynamic>>>
-                              cabinetGroups = {};
+                          // Group products by cabinetId (so we can use cabinet doc id for detection listening)
+                          final Map<String, List<Map<String, dynamic>>> cabinetGroups = {};
 
                           for (var doc in products) {
                             final data = doc.data() as Map<String, dynamic>;
-                            final cabinetName =
-                                data["cabinetName"] ?? "Uncategorized";
+                            final cabinetId = data["cabinetId"]?.toString() ?? "unorganized";
+                            final cabinetName = data["cabinetName"] ?? cabinetId;
 
-                            if (!cabinetGroups.containsKey(cabinetName)) {
-                              cabinetGroups[cabinetName] = [];
+                            if (!cabinetGroups.containsKey(cabinetId)) {
+                              cabinetGroups[cabinetId] = [];
                             }
-                            cabinetGroups[cabinetName]!.add(data);
+                            // include doc id so details page can match detections reliably
+                            cabinetGroups[cabinetId]!.add({...data, 'id': doc.id, 'cabinetName': cabinetName});
                           }
 
                           return ListView(
                             padding: const EdgeInsets.all(16),
                             children: cabinetGroups.entries.map((entry) {
+                              final cabinetId = entry.key;
+                              final items = entry.value;
+                              final cabinetName = items.isNotEmpty ? (items[0]['cabinetName'] ?? cabinetId) : cabinetId;
                               return InventorySection(
-                                title: entry.key,
-                                labels: entry.value
-                                    .map((p) =>
-                                        "${p["brand"] ?? ""} ${p["name"] ?? ""}")
-                                    .toList(),
-                                items: entry.value,
+                                title: cabinetName,
+                                cabinetId: cabinetId,
+                                labels: items.map((p) => "${p["brand"] ?? ""} ${p["name"] ?? ""}").toList(),
+                                items: items,
                               );
                             }).toList(),
                           );
@@ -351,12 +380,14 @@ class _HomePageState extends State<HomePage> {
 // Your existing InventorySection class remains the same...
 class InventorySection extends StatelessWidget {
   final String title;
+  final String cabinetId;
   final List<String> labels;
   final List<Map<String, dynamic>> items;
 
   const InventorySection({
     super.key,
     required this.title,
+    required this.cabinetId,
     required this.labels,
     required this.items,
   });
@@ -391,6 +422,7 @@ class InventorySection extends StatelessWidget {
           MaterialPageRoute(
             builder: (context) => CabinetDetailsPage(
               title: title,
+              cabinetId: cabinetId,
               items: items,
             ),
           ),
