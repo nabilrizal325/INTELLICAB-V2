@@ -68,6 +68,9 @@ class _HomePageState extends State<HomePage> {
             await _addLowItemToGroceryIfMissing(user.uid, doc.id, itemName);
           }
         }
+        // Refresh the notification count after processing inventory changes
+        // so the badge combines both low-stock and expiry notifications in real-time.
+        await _loadExpiringItemsCount();
       } catch (e) {
         debugPrint('Inventory listener error: $e');
       }
