@@ -119,10 +119,9 @@ class _ManualEntryFormState extends State<ManualEntryForm> {
           .add(item);
 
       // Step 4: Save simplified data (for food product listing)
-      await FirebaseFirestore.instance.collection('foods_product').add({
+      await FirebaseFirestore.instance.collection('food_products').add({
         'name': _nameController.text.trim(),
         'brand': _brandController.text.trim(),
-        'expiryDate': _expiryController.text.trim(), // ✅ Added expiry date
         'created_at': FieldValue.serverTimestamp(),
         'imageUrl': imageUrl,
       });
