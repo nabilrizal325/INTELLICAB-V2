@@ -23,10 +23,10 @@ class _ManualEntryFormState extends State<ManualEntryForm> {
   final TextEditingController _expiryController = TextEditingController();
   final TextEditingController _quantityController = TextEditingController();
 
-  // Initialize Cloudinary
+  // Initialize Cloudinary (unsigned)
   final cloudinary = CloudinaryPublic(
-    'dqdh5szh2',      // 🔹 Replace with your Cloudinary "cloud name"
-    'unsigned_upload',      // 🔹 Replace with your unsigned preset name
+    'dqdh5szh2', // 🔹 Your Cloud Name
+    'unsigned_upload', // 🔹 Your unsigned preset
     cache: false,
   );
 
@@ -97,7 +97,7 @@ class _ManualEntryFormState extends State<ManualEntryForm> {
         imageUrl = await _uploadToCloudinary(_imageFile!);
       }
 
-      // Step 2: Prepare Firestore item
+      // Step 2: Prepare Firestore item (full data for user's inventory)
       final item = {
         'name': _nameController.text.trim(),
         'brand': _brandController.text.trim(),
@@ -111,17 +111,18 @@ class _ManualEntryFormState extends State<ManualEntryForm> {
         'imageUrl': imageUrl,
       };
 
-      // Step 3: Save to User Inventory
+      // Step 3: Save full item under User inventory
       await FirebaseFirestore.instance
           .collection('User')
           .doc(user.uid)
           .collection('inventory')
           .add(item);
 
-      // Step 4: Also Save Basic Info to `foods_product`
+      // Step 4: Save simplified data (for food product listing)
       await FirebaseFirestore.instance.collection('foods_product').add({
         'name': _nameController.text.trim(),
         'brand': _brandController.text.trim(),
+        'expiryDate': _expiryController.text.trim(), // ✅ Added expiry date
         'created_at': FieldValue.serverTimestamp(),
         'imageUrl': imageUrl,
       });
