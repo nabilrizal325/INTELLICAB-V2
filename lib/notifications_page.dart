@@ -167,7 +167,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                   child: ListTile(
                     leading: const Icon(Icons.tune),
                     title: const Text('Reminder level'),
-                    subtitle: Text('Notify when quantity <= $reminderLevel'),
+                    subtitle: Text('Notify when quantity is below th$reminderLevel'),
                     trailing: IconButton(
                       icon: const Icon(Icons.edit),
                       onPressed: () async {
