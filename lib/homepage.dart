@@ -5,7 +5,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intellicab/add_item_page.dart';
 import 'package:intellicab/cabinet_details_page.dart';
 import 'package:intellicab/gorcery_list.dart';
-import 'package:intellicab/notifications_page.dart'; // Add this import
+import 'package:intellicab/notifications_page.dart';
+import 'package:intellicab/devices_screen.dart';
 import 'profile_page.dart';
 import 'package:intl/intl.dart';
 
@@ -325,7 +326,9 @@ class _HomePageState extends State<HomePage> {
                               ),
                               IconButton(
                                 icon: const Icon(Icons.settings),
-                                onPressed: () {},
+                                onPressed: () {
+                                  _showSettingsMenu(context);
+                                },
                               ),
                             ],
                           ),
@@ -456,6 +459,18 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
 
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const DevicesScreen(),
+            ),
+          );
+        },
+        backgroundColor: Colors.pinkAccent.shade100,
+        child: const Icon(Icons.add, color: Colors.black),
+      ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (index) {
@@ -478,6 +493,43 @@ class _HomePageState extends State<HomePage> {
           BottomNavigationBarItem(
               icon: Icon(Icons.list_alt), label: "Grocery List"),
         ],
+      ),
+    );
+  }
+
+  void _showSettingsMenu(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.devices),
+              title: const Text('My Devices'),
+              subtitle: const Text('Manage Pi cameras'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const DevicesScreen(),
+                  ),
+                );
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.close),
+              title: const Text('Close'),
+              onTap: () => Navigator.pop(context),
+            ),
+          ],
+        ),
       ),
     );
   }
