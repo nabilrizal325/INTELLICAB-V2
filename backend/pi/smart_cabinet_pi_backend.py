@@ -9,7 +9,7 @@ import sys
 import os
 from picamera2 import Picamera2
 import firebase_admin
-from firebase_admin import credentials, firestore, storage
+from firebase_admin import credentials, firestore
 import socket
 import struct
 import threading
@@ -35,7 +35,6 @@ class SmartCabinetPiBackend:
                 })
             
             self.db = firestore.client()
-            self.bucket = storage.bucket()
             print("✅ Firebase connected")
         except Exception as e:
             print(f"❌ Firebase error: {e}")
