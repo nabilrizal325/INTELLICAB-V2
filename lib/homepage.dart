@@ -6,6 +6,7 @@ import 'package:intellicab/add_item_page.dart';
 import 'package:intellicab/cabinet_details_page.dart';
 import 'package:intellicab/gorcery_list.dart';
 import 'package:intellicab/notifications_page.dart'; // Add this import
+import 'package:intellicab/notification_service.dart';
 import 'profile_page.dart';
 import 'package:intl/intl.dart';
 
@@ -20,10 +21,13 @@ class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
   int _expiringItemsCount = 0;
   StreamSubscription<QuerySnapshot>? _inventorySub;
+  final Set<String> _notifiedItems = {}; // Track which items have been notified
 
   @override
   void initState() {
     super.initState();
+    // Initialize notification service
+    NotificationService().initialize();
     _loadExpiringItemsCount();
     _setupInventoryListener();
   }
@@ -56,18 +60,104 @@ class _HomePageState extends State<HomePage> {
           }
         }
 
+        final notificationService = NotificationService();
+        final now = DateTime.now();
+        
         for (var doc in snap.docs) {
           final data = doc.data();
+          final itemName = '${data['brand'] ?? ''} ${data['name'] ?? ''}'.trim();
+          final itemKey = doc.id;
+          
+          // Check low-stock
           final qtyField = data['quantity'];
           int qty = 0;
           if (qtyField is num) qty = qtyField.toInt();
           else if (qtyField is String) qty = int.tryParse(qtyField) ?? 0;
 
           if (qty <= reminderLevel) {
-            final itemName = '${data['brand'] ?? ''} ${data['name'] ?? ''}'.trim();
+            final notificationKey = 'lowstock_$itemKey';
+            if (!_notifiedItems.contains(notificationKey)) {
+              await notificationService.showLowStockNotification(
+                itemName: itemName,
+                currentQuantity: qty,
+              );
+              _notifiedItems.add(notificationKey);
+              debugPrint('Showed low stock notification for: $itemName');
+            }
             await _addLowItemToGroceryIfMissing(user.uid, doc.id, itemName);
           }
+          
+          // Check expiry
+          String? expiryDateStr;
+          var expiryField = data['expiryDates'];
+          if (expiryField is List && expiryField.isNotEmpty) {
+            final firstItem = expiryField.first;
+            if (firstItem is Timestamp) {
+              expiryDateStr = DateFormat('dd/MM/yyyy').format(firstItem.toDate());
+            } else if (firstItem != null) {
+              expiryDateStr = firstItem.toString().trim();
+            }
+          }
+          
+          if ((expiryDateStr == null || expiryDateStr.isEmpty)) {
+            expiryField = data['expiryDate'];
+            if (expiryField != null) {
+              if (expiryField is Timestamp) {
+                expiryDateStr = DateFormat('dd/MM/yyyy').format(expiryField.toDate());
+              } else {
+                expiryDateStr = expiryField.toString().trim();
+              }
+            }
+          }
+          
+          if ((expiryDateStr == null || expiryDateStr.isEmpty)) {
+            expiryField = data['timeStamp'];
+            if (expiryField != null) {
+              if (expiryField is Timestamp) {
+                expiryDateStr = DateFormat('dd/MM/yyyy').format(expiryField.toDate());
+              } else {
+                expiryDateStr = expiryField.toString().trim();
+              }
+            }
+          }
+
+          if (expiryDateStr != null && expiryDateStr.isNotEmpty) {
+            try {
+              DateTime? expiryDate;
+              final formats = ['dd-MM-yyyy', 'dd/MM/yyyy', 'yyyy-MM-dd', 'yyyy/MM/dd', 'dd.MM.yyyy', 'MMM dd, yyyy'];
+              for (final format in formats) {
+                try {
+                  expiryDate = DateFormat(format).parse(expiryDateStr);
+                  break;
+                } catch (_) {
+                  continue;
+                }
+              }
+
+              if (expiryDate != null) {
+                final startOfExpiry = DateTime(expiryDate.year, expiryDate.month, expiryDate.day);
+                final startOfToday = DateTime(now.year, now.month, now.day);
+                final daysUntilExpiry = startOfExpiry.difference(startOfToday).inDays;
+                
+                // Show notification for items expiring within 3 days
+                if (daysUntilExpiry <= 3 && daysUntilExpiry >= 0) {
+                  final notificationKey = 'expiry_$itemKey';
+                  if (!_notifiedItems.contains(notificationKey)) {
+                    await notificationService.showExpiryNotification(
+                      itemName: itemName,
+                      daysUntilExpiry: daysUntilExpiry,
+                    );
+                    _notifiedItems.add(notificationKey);
+                    debugPrint('Showed expiry notification for: $itemName');
+                  }
+                }
+              }
+            } catch (e) {
+              debugPrint('Error parsing expiry date "$expiryDateStr": $e');
+            }
+          }
         }
+        
         // Refresh the notification count after processing inventory changes
         // so the badge combines both low-stock and expiry notifications in real-time.
         await _loadExpiringItemsCount();
@@ -115,16 +205,27 @@ class _HomePageState extends State<HomePage> {
     // Load user-configured reminder level (threshold for low-stock). Default to 1.
     final userDoc = await userDocRef.get();
     int reminderLevel = 1;
+    DateTime? lastViewedNotifications;
+    
     if (userDoc.exists) {
       final data = userDoc.data();
-      if (data != null && data['reminderLevel'] != null) {
-        try {
-          reminderLevel = (data['reminderLevel'] as num).toInt();
-        } catch (_) {
+      if (data != null) {
+        if (data['reminderLevel'] != null) {
           try {
-            reminderLevel = int.parse(data['reminderLevel'].toString());
+            reminderLevel = (data['reminderLevel'] as num).toInt();
           } catch (_) {
-            reminderLevel = 1;
+            try {
+              reminderLevel = int.parse(data['reminderLevel'].toString());
+            } catch (_) {
+              reminderLevel = 1;
+            }
+          }
+        }
+        // Get the last time notifications were viewed
+        if (data['lastViewedNotifications'] != null) {
+          final timestamp = data['lastViewedNotifications'];
+          if (timestamp is Timestamp) {
+            lastViewedNotifications = timestamp.toDate();
           }
         }
       }
@@ -138,6 +239,13 @@ class _HomePageState extends State<HomePage> {
 
     for (var doc in snapshot.docs) {
       final data = doc.data();
+      
+      // Check if item was created/updated after last viewed notifications
+      DateTime? itemUpdatedAt;
+      final updatedAtField = data['updatedAt'];
+      if (updatedAtField is Timestamp) {
+        itemUpdatedAt = updatedAtField.toDate();
+      }
 
       // Check low-stock
       final qtyField = data['quantity'];
@@ -149,23 +257,55 @@ class _HomePageState extends State<HomePage> {
       }
 
       if (qty <= reminderLevel) {
-        notifyIds.add(doc.id);
+        // Only add if item was updated after last viewing (or if never viewed)
+        if (lastViewedNotifications == null || 
+            (itemUpdatedAt != null && itemUpdatedAt.isAfter(lastViewedNotifications))) {
+          notifyIds.add(doc.id);
+        }
       }
 
       // Check expiry (support expiryDates array or expiryDate)
-      final expiryField = data['expiryDates'] ?? data['expiryDate'];
       String? expiryDateStr;
+      
+      // Priority 1: Check expiryDates array FIRST
+      var expiryField = data['expiryDates'];
       if (expiryField is List && expiryField.isNotEmpty) {
-        expiryDateStr = expiryField.first?.toString();
-      } else if (expiryField != null) {
-        expiryDateStr = expiryField.toString();
+        final firstItem = expiryField.first;
+        debugPrint('✅ Found expiryDates array, first item type: ${firstItem.runtimeType}');
+        
+        // Handle both Timestamp and String in array
+        if (firstItem is Timestamp) {
+          expiryDateStr = DateFormat('dd/MM/yyyy').format(firstItem.toDate());
+          debugPrint('✅ Converted Timestamp to: $expiryDateStr');
+        } else {
+          expiryField = firstItem;
+        }
+      } else {
+        expiryField = null;
+      }
+      
+      // Priority 2: Check expiryDate field (if expiryDateStr not set)
+      if ((expiryDateStr == null || expiryDateStr.isEmpty) && expiryField == null) {
+        expiryField = data['expiryDate'];
+      }
+      
+      // Priority 3: Check timeStamp field (legacy, only if others empty)
+      if ((expiryDateStr == null || expiryDateStr.isEmpty) && (expiryField == null || expiryField.toString().isEmpty)) {
+        expiryField = data['timeStamp'];
+      }
+      
+      if (expiryDateStr == null || expiryDateStr.isEmpty) {
+        if (expiryField != null) {
+          expiryDateStr = expiryField.toString();
+        }
       }
 
       if (expiryDateStr != null && expiryDateStr.isNotEmpty) {
         DateTime? expiryDate;
         try {
-          // Try formats in order: dd-MM-yyyy, dd/MM/yyyy
-          for (final format in ['dd-MM-yyyy', 'dd/MM/yyyy']) {
+          // Try multiple date formats
+          final formats = ['dd-MM-yyyy', 'dd/MM/yyyy', 'yyyy-MM-dd', 'yyyy/MM/dd', 'dd.MM.yyyy', 'MMM dd, yyyy'];
+          for (final format in formats) {
             try {
               expiryDate = DateFormat(format).parse(expiryDateStr);
               break;
@@ -181,8 +321,12 @@ class _HomePageState extends State<HomePage> {
             final daysUntilExpiry = startOfExpiry.difference(startOfToday).inDays;
             
             if (daysUntilExpiry <= 7 && daysUntilExpiry >= 0) {
-              notifyIds.add(doc.id);
-              debugPrint('Adding to notify: ${data['name']} (expires in $daysUntilExpiry days)');
+              // Only add if item was updated after last viewing (or if never viewed)
+              if (lastViewedNotifications == null || 
+                  (itemUpdatedAt != null && itemUpdatedAt.isAfter(lastViewedNotifications))) {
+                notifyIds.add(doc.id);
+                debugPrint('Adding to notify: ${data['name']} (expires in $daysUntilExpiry days)');
+              }
             }
           }
         } catch (e) {
@@ -196,6 +340,19 @@ class _HomePageState extends State<HomePage> {
         _expiringItemsCount = notifyIds.length;
       });
     }
+  }
+  
+  Future<void> _markNotificationsAsViewed() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    
+    // Save the current timestamp as when notifications were last viewed
+    await FirebaseFirestore.instance.collection('User').doc(user.uid).set(
+      {'lastViewedNotifications': FieldValue.serverTimestamp()},
+      SetOptions(merge: true),
+    );
+    
+    debugPrint('✅ Marked notifications as viewed');
   }
 
   @override
@@ -285,14 +442,25 @@ class _HomePageState extends State<HomePage> {
                                   IconButton(
                                     icon: const Icon(Icons.notifications_none),
                                     onPressed: () {
+                                      // Mark notifications as viewed (persist to Firestore)
+                                      _markNotificationsAsViewed();
+                                      
+                                      // Clear the notification badge immediately
+                                      setState(() {
+                                        _expiringItemsCount = 0;
+                                      });
+                                      
+                                      // Clear notification cache when entering notifications page
+                                      NotificationService().clearShownCache();
+                                      
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
                                           builder: (context) => const NotificationsPage(),
                                         ),
                                       ).then((_) {
-                                        // Refresh count when returning from notifications
-                                        _loadExpiringItemsCount();
+                                        // Keep badge hidden - don't reload
+                                        debugPrint('Returned from notifications page');
                                       });
                                     },
                                   ),

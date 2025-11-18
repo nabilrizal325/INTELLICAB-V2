@@ -49,6 +49,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       final data = doc.data();
       final itemName = '${data['brand'] ?? ''} ${data['name'] ?? ''}'.trim();
       debugPrint('\n--- Item: $itemName ---');
+      debugPrint('Complete item data: $data');
 
       // Quantity handling
       final qtyField = data['quantity'];
@@ -58,36 +59,85 @@ class _NotificationsPageState extends State<NotificationsPage> {
       } else if (qtyField is String) {
         qty = int.tryParse(qtyField) ?? 0;
       }
+      debugPrint('Quantity: $qty');
 
       if (qty <= reminderLevel) {
         lowStock.add({...data, 'id': doc.id, 'quantity': qty});
         debugPrint('Added to low stock list: $itemName (qty: $qty)');
       }
 
-      // Expiry handling - check both expiryDates and expiryDate
-      final expiryField = data['expiryDates'] ?? data['expiryDate'];
-      debugPrint('Raw expiry field: $expiryField (type: ${expiryField?.runtimeType})');
-      
+      // Expiry handling - check all possible expiry date fields
       String? expiryDateStr;
+      
+      // Priority 1: Check expiryDates array FIRST (this is the actual expiry date)
+      var expiryField = data['expiryDates'];
       if (expiryField is List && expiryField.isNotEmpty) {
-        expiryDateStr = expiryField.first?.toString();
-        debugPrint('Parsed from List: $expiryDateStr');
-      } else if (expiryField != null) {
-        expiryDateStr = expiryField.toString();
-        debugPrint('Using value as string: $expiryDateStr');
+        final firstItem = expiryField.first;
+        debugPrint('✅ Found expiryDates array, first item type: ${firstItem.runtimeType}, value: $firstItem');
+        
+        // Handle both Timestamp and String in array
+        if (firstItem is Timestamp) {
+          expiryDateStr = DateFormat('dd/MM/yyyy').format(firstItem.toDate());
+          debugPrint('✅ Converted Timestamp to date string: $expiryDateStr');
+        } else if (firstItem != null) {
+          expiryDateStr = firstItem.toString().trim();
+          debugPrint('✅ Using expiryDates string value: $expiryDateStr');
+        }
+      } else {
+        debugPrint('⏭️ expiryDates array empty or not found');
       }
+      
+      // Priority 2: Check expiryDate field (if expiryDateStr not set)
+      if ((expiryDateStr == null || expiryDateStr.isEmpty)) {
+        expiryField = data['expiryDate'];
+        if (expiryField != null) {
+          debugPrint('Checking expiryDate: $expiryField (type: ${expiryField.runtimeType})');
+          if (expiryField is Timestamp) {
+            expiryDateStr = DateFormat('dd/MM/yyyy').format(expiryField.toDate());
+            debugPrint('✅ Converted expiryDate Timestamp to: $expiryDateStr');
+          } else {
+            expiryDateStr = expiryField.toString().trim();
+          }
+        }
+      }
+      
+      // Priority 3: Check timeStamp field (legacy, only if others empty)
+      if ((expiryDateStr == null || expiryDateStr.isEmpty)) {
+        expiryField = data['timeStamp'];
+        if (expiryField != null) {
+          debugPrint('Checking timeStamp (legacy): $expiryField (type: ${expiryField.runtimeType})');
+          if (expiryField is Timestamp) {
+            expiryDateStr = DateFormat('dd/MM/yyyy').format(expiryField.toDate());
+            debugPrint('✅ Converted timeStamp Timestamp to: $expiryDateStr');
+          } else {
+            expiryDateStr = expiryField.toString().trim();
+          }
+        }
+      }
+      
+      debugPrint('Final expiryDateStr for "$itemName": $expiryDateStr');
 
       if (expiryDateStr != null && expiryDateStr.isNotEmpty) {
         DateTime? expiryDate;
         try {
-          // Try formats in order: dd-MM-yyyy, dd/MM/yyyy
-          for (final format in ['dd-MM-yyyy', 'dd/MM/yyyy']) {
+          // Try multiple date formats in order of likelihood
+          final formats = [
+            'dd-MM-yyyy',     // 25-12-2024
+            'dd/MM/yyyy',     // 25/12/2024
+            'yyyy-MM-dd',     // 2024-12-25
+            'yyyy/MM/dd',     // 2024/12/25
+            'dd.MM.yyyy',     // 25.12.2024
+            'MMM dd, yyyy',   // Dec 25, 2024
+          ];
+          
+          for (final format in formats) {
             try {
               expiryDate = DateFormat(format).parse(expiryDateStr);
-              debugPrint('Successfully parsed with format $format: $expiryDate');
+              debugPrint('✅ Successfully parsed expiry date "$expiryDateStr" with format "$format"');
               break;
-            } catch (_) {
-              debugPrint('Failed to parse with format $format, trying next...');
+            } catch (e) {
+              debugPrint('❌ Failed format "$format": $e');
+              continue;
             }
           }
 
@@ -95,11 +145,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
             // Normalize expiry date to start of day for accurate day comparison
             final startOfExpiry = DateTime(expiryDate.year, expiryDate.month, expiryDate.day);
             final daysUntilExpiry = startOfExpiry.difference(startOfToday).inDays;
-            debugPrint('Days until expiry: $daysUntilExpiry (today: ${startOfToday.day}/${startOfToday.month}, expiry: ${startOfExpiry.day}/${startOfExpiry.month})');
+            debugPrint('Item: $itemName, Expiry: $expiryDateStr, Parsed Date: $startOfExpiry, Days until: $daysUntilExpiry');
 
-            // Show items expiring in 7 days or less
-            if (daysUntilExpiry <= 7 && daysUntilExpiry >= 0) {
-              debugPrint('Added to expiring list: $itemName (expires in $daysUntilExpiry days)');
+            // Show only items expiring in 3 days or less
+            if (daysUntilExpiry <= 3 && daysUntilExpiry >= 0) {
+              debugPrint('✅ Added to expiring list: $itemName (expires in $daysUntilExpiry days)');
               expiring.add({
                 ...data,
                 'id': doc.id,
@@ -107,14 +157,16 @@ class _NotificationsPageState extends State<NotificationsPage> {
                 'expiryDateObj': expiryDate,
               });
             } else {
-              debugPrint('Not expiring soon: $daysUntilExpiry days until expiry');
+              debugPrint('⏭️ Not expiring soon: $daysUntilExpiry days until expiry (threshold is 0-3 days)');
             }
+          } else {
+            debugPrint('❌ Could not parse expiry date: "$expiryDateStr" - no matching format found');
           }
         } catch (e) {
-          debugPrint('Error parsing date "$expiryDateStr": $e');
+          debugPrint('❌ Error parsing date "$expiryDateStr": $e');
         }
       } else {
-        debugPrint('No valid expiry date found');
+        debugPrint('⏭️ No valid expiry date found for item');
       }
     }
 
