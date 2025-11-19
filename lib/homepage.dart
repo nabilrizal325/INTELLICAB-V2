@@ -391,59 +391,145 @@ class _HomePageState extends State<HomePage> {
 
                     if (_expiringItemsCount > 0) const SizedBox(height: 16),
 
-                    // Inventory per Cabinet
+                    // Replace the inventory section with device-based grouping
+
+                    // Inventory per Device (Device = Cabinet)
                     Expanded(
                       child: StreamBuilder<QuerySnapshot>(
+                        // Listen to inventory changes
                         stream: userDoc.collection("inventory").snapshots(),
-                        builder: (context, snapshot) {
-                          if (!snapshot.hasData) {
-                            return const Center(
-                                child: CircularProgressIndicator());
+                        builder: (context, inventorySnapshot) {
+                          if (!inventorySnapshot.hasData) {
+                            return const Center(child: CircularProgressIndicator());
                           }
 
-                          final products = snapshot.data!.docs;
+                          return StreamBuilder<QuerySnapshot>(
+                            // Get user's devices (each device IS a cabinet)
+                            stream: FirebaseFirestore.instance
+                                .collection('devices')
+                                .where('userId', isEqualTo: currentUser.uid)
+                                .snapshots(),
+                            builder: (context, devicesSnapshot) {
+                              if (!devicesSnapshot.hasData) {
+                                return const Center(child: CircularProgressIndicator());
+                              }
 
-                          if (products.isEmpty) {
-                            return const Center(
-                              child: Text(
-                                "Nothing in inventory yet.",
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.black,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            );
-                          }
+                              final products = inventorySnapshot.data!.docs;
+                              final devices = devicesSnapshot.data!.docs;
 
-                          // Group products by cabinetId (so we can use cabinet doc id for detection listening)
-                          final Map<String, List<Map<String, dynamic>>> cabinetGroups = {};
+                              // Create map of deviceId -> device info
+                              final Map<String, Map<String, dynamic>> deviceInfo = {};
+                              
+                              for (var deviceDoc in devices) {
+                                final deviceData = deviceDoc.data() as Map<String, dynamic>;
+                                deviceInfo[deviceDoc.id] = {
+                                  'name': deviceData['name'] ?? deviceDoc.id,
+                                  'status': deviceData['status'] ?? 'offline',
+                                  'detection_enabled': deviceData['detection_enabled'] ?? false,
+                                };
+                              }
 
-                          for (var doc in products) {
-                            final data = doc.data() as Map<String, dynamic>;
-                            final cabinetId = data["cabinetId"]?.toString() ?? "unorganized";
-                            final cabinetName = data["cabinetName"] ?? cabinetId;
+                              // Group products by deviceId
+                              final Map<String, List<Map<String, dynamic>>> deviceGroups = {};
 
-                            if (!cabinetGroups.containsKey(cabinetId)) {
-                              cabinetGroups[cabinetId] = [];
-                            }
-                            // include doc id so details page can match detections reliably
-                            cabinetGroups[cabinetId]!.add({...data, 'id': doc.id, 'cabinetName': cabinetName});
-                          }
+                              // Always show unorganized first
+                              deviceGroups['unorganized'] = [];
 
-                          return ListView(
-                            padding: const EdgeInsets.all(16),
-                            children: cabinetGroups.entries.map((entry) {
-                              final cabinetId = entry.key;
-                              final items = entry.value;
-                              final cabinetName = items.isNotEmpty ? (items[0]['cabinetName'] ?? cabinetId) : cabinetId;
-                              return InventorySection(
-                                title: cabinetName,
-                                cabinetId: cabinetId,
-                                labels: items.map((p) => "${p["brand"] ?? ""} ${p["name"] ?? ""}").toList(),
-                                items: items,
+                              for (var doc in products) {
+                                final data = doc.data() as Map<String, dynamic>;
+                                final deviceId = data["deviceId"]?.toString() ?? "unorganized";
+                                final deviceName = data["deviceName"] ?? deviceId;
+
+                                if (!deviceGroups.containsKey(deviceId)) {
+                                  deviceGroups[deviceId] = [];
+                                }
+            
+                                deviceGroups[deviceId]!.add({
+                                  ...data,
+                                  'id': doc.id,
+                                  'deviceName': deviceName
+                                });
+                              }
+
+                              // Add empty entries for connected devices with no items
+                              for (var deviceId in deviceInfo.keys) {
+                                if (!deviceGroups.containsKey(deviceId)) {
+                                  deviceGroups[deviceId] = [];
+                                }
+                              }
+
+                              // Build device/cabinet cards
+                              final List<Widget> cabinetCards = [];
+
+                              // Add unorganized first
+                              if (deviceGroups.containsKey('unorganized')) {
+                                final items = deviceGroups['unorganized']!;
+                                cabinetCards.add(
+                                  EnhancedInventorySection(
+                                    title: 'Unorganized',
+                                    deviceId: 'unorganized',
+                                    items: items,
+                                    hasDevice: false,
+                                    deviceInfo: null,
+                                  ),
+                                );
+                              }
+
+                              // Add devices (each device IS a cabinet)
+                              for (var entry in deviceGroups.entries) {
+                                final deviceId = entry.key;
+                                if (deviceId == 'unorganized') continue;
+
+                                final items = entry.value;
+                                final info = deviceInfo[deviceId];
+            
+                                // Only show if device exists (is connected)
+                                if (info != null) {
+                                  cabinetCards.add(
+                                    EnhancedInventorySection(
+                                      title: info['name'] as String,
+                                      deviceId: deviceId,
+                                      items: items,
+                                      hasDevice: true,
+                                      deviceInfo: info,
+                                    ),
+                                  );
+                                }
+                              }
+
+                              if (cabinetCards.isEmpty) {
+                                return const Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.devices, size: 64, color: Colors.grey),
+                                      SizedBox(height: 16),
+                                      Text(
+                                        "Connect a device to start tracking",
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          color: Colors.black,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                      SizedBox(height: 8),
+                                      Text(
+                                        "Go to Settings → My Devices",
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }
+
+                              return ListView(
+                                padding: const EdgeInsets.all(16),
+                                children: cabinetCards,
                               );
-                            }).toList(),
+                            },
                           );
                         },
                       ),
@@ -662,6 +748,287 @@ class InventorySection extends StatelessWidget {
                   }),
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Enhanced inventory section showing items for a device (which IS a cabinet)
+/// 
+/// Each device represents a physical storage location. This widget displays:
+/// - Device name (e.g., "Kitchen Cabinet")
+/// - Connection status (online/offline)
+/// - Detection status (active badge)
+/// - Items stored at this device's location
+/// - "Cabinet is empty" when device connected but no items
+/// 
+/// The widget is tappable to view detailed inventory for that device.
+class EnhancedInventorySection extends StatelessWidget {
+  /// Display name for the device/cabinet (e.g., "Kitchen Cabinet")
+  final String title;
+  
+  /// Device ID (MAC address) - represents the storage location
+  final String deviceId;
+  
+  /// List of inventory items at this device's location
+  final List<Map<String, dynamic>> items;
+  
+  /// Whether this location has a connected device
+  final bool hasDevice;
+  
+  /// Device connection and detection info
+  final Map<String, dynamic>? deviceInfo;
+
+  const EnhancedInventorySection({
+    super.key,
+    required this.title,
+    required this.deviceId,
+    required this.items,
+    required this.hasDevice,
+    this.deviceInfo,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isOnline = deviceInfo?['status'] == 'online';
+    final isDetecting = deviceInfo?['detection_enabled'] == true;
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => CabinetDetailsPage(
+              title: title,
+              cabinetId: deviceId,  // Using deviceId as location identifier
+              items: items,
+            ),
+          ),
+        );
+      },
+      child: Card(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        color: Colors.white,
+        elevation: 2,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header with device name and status
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        if (hasDevice) ...[
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              // Online/Offline indicator
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: isOnline ? Colors.green : Colors.grey,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                isOnline ? 'Device Online' : 'Device Offline',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                              // Detection badge
+                              if (isDetecting) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green[100],
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.radar,
+                                        size: 10,
+                                        color: Colors.green[700],
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'DETECTING',
+                                        style: TextStyle(
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.green[700],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  Text(
+                    '${items.length} items',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              // Show items or empty state
+              if (items.isEmpty && hasDevice)
+                // Empty device location
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: Center(
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.inventory_2_outlined,
+                          size: 48,
+                          color: Colors.grey[400],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Cabinet is empty',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          isDetecting 
+                              ? 'Camera will detect items added'
+                              : 'Enable detection to auto-track items',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[500],
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else if (items.isEmpty)
+                // Unorganized with no items
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.blue[700]),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Scan items to add them here',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.blue[700],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                // Show items horizontally
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: List.generate(items.length, (index) {
+                      final item = items[index];
+                      final label = "${item["brand"] ?? ""} ${item["name"] ?? ""}";
+                      
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 16),
+                        child: Column(
+                          children: [
+                            CircleAvatar(
+                              radius: 30,
+                              backgroundColor: Colors.pink.shade100,
+                              child: item['imageUrl'] != null
+                                  ? ClipOval(
+                                      child: Image.network(
+                                        item['imageUrl'],
+                                        width: 60,
+                                        height: 60,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (context, error, stackTrace) {
+                                          return Text(
+                                            label[0].toUpperCase(),
+                                            style: const TextStyle(
+                                              fontSize: 20,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    )
+                                  : Text(
+                                      label.isNotEmpty ? label[0].toUpperCase() : '?',
+                                      style: const TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                            ),
+                            const SizedBox(height: 6),
+                            SizedBox(
+                              width: 80,
+                              child: Text(
+                                label,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(fontSize: 12),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ),
+                ),
             ],
           ),
         ),

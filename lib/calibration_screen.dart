@@ -1,10 +1,60 @@
+// ============================================================================
+// FILE: calibration_screen.dart
+// PURPOSE: Interactive boundary line drawing for detection zone setup
+// 
+// This screen allows users to draw a boundary line on the calibration frame
+// captured from the Raspberry Pi camera. Objects crossing this line will
+// trigger detection events.
+// 
+// FUNCTIONALITY:
+// - Displays calibration image from base64 string
+// - Touch/drag interface to draw boundary line
+// - Visual feedback with drawn line overlay
+// - Coordinate normalization (0.0-1.0) for resolution independence
+// - Save boundary to Firestore
+// - Load existing boundary if already configured
+// 
+// DRAWING MECHANICS:
+// - User drags finger/mouse to draw line
+// - Start point set on onPanStart
+// - Line updates in real-time during onPanUpdate
+// - End point finalized on onPanEnd
+// - Coordinates stored as normalized values (x/width, y/height)
+// 
+// COORDINATE SYSTEM:
+// - Screen coordinates: Actual pixel positions from gestures
+// - Normalized coordinates: 0.0-1.0 range (stored in Firestore)
+// - Conversion: normalizedX = screenX / imageWidth
+// - Benefit: Works across different camera resolutions
+// 
+// NAVIGATION:
+// - From: CameraScreen → "Draw Boundary" button
+// - To: CameraScreen (back after save)
+// 
+// UI COMPONENTS:
+// - GestureDetector for touch input
+// - CustomPainter for line rendering
+// - LayoutBuilder for image dimensions
+// - FloatingActionButton for save action
+// ============================================================================
+
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'device_service.dart';
 
+/// Screen for drawing detection boundary line on calibration image
+/// 
+/// Provides interactive line drawing interface with gesture detection
+/// and saves normalized coordinates to Firestore.
 class CalibrationScreen extends StatefulWidget {
+  /// Device ID to save boundary for
   final String deviceId;
+  
+  /// Base64 encoded calibration frame from Pi camera
   final String calibrationImageBase64;
+  
+  /// Existing boundary coordinates (if already configured)
+  /// Format: {'x1': double, 'y1': double, 'x2': double, 'y2': double}
   final Map<String, dynamic>? existingBoundary;
 
   const CalibrationScreen({
@@ -19,15 +69,23 @@ class CalibrationScreen extends StatefulWidget {
 }
 
 class _CalibrationScreenState extends State<CalibrationScreen> {
+  /// Start point of the boundary line (screen coordinates)
   Offset? _startPoint;
+  
+  /// End point of the boundary line (screen coordinates)
   Offset? _endPoint;
+  
+  /// Device service for saving boundary
   final DeviceService _deviceService = DeviceService();
+  
+  /// Loading state during save operation
   bool _isSaving = false;
 
   @override
   void initState() {
     super.initState();
-    // Load existing boundary if present
+    /// Load existing boundary if device already has one configured
+    /// Converts normalized coordinates back to screen coordinates
     if (widget.existingBoundary != null) {
       try {
         _startPoint = Offset(

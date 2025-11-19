@@ -1,10 +1,66 @@
+// ============================================================================
+// FILE: detection_history_screen.dart
+// PURPOSE: Display and manage detection events from smart cabinet camera
+// 
+// This screen shows all object detection events for a specific device,
+// allowing users to review, edit, apply to inventory, or ignore detections.
+// 
+// FEATURES:
+// - Real-time list of detection events (StreamBuilder)
+// - Detection thumbnails (base64 decoded images)
+// - Item name, confidence score, timestamp display
+// - Direction indicators (IN=green arrow, OUT=orange arrow)
+// - Status badges (APPLIED, IGNORED)
+// - Action buttons for unprocessed detections (Edit, Apply, Ignore)
+// 
+// DETECTION WORKFLOW:
+// 1. Pi/cloud server logs detection to Firestore:
+//    - devices/{deviceId}/detections/{detectionId}
+// 2. This screen displays all detections in real-time
+// 3. User can:
+//    - Edit: Correct item name before applying
+//    - Apply: Update inventory based on detection
+//    - Ignore: Mark as false positive
+// 4. Processed detections show badges and hide action buttons
+// 
+// FIRESTORE STRUCTURE (per detection):
+// {
+//   timestamp: Timestamp,
+//   item_name: String,        // Detected item from YOLO
+//   confidence: double,       // Detection confidence (0.0-1.0)
+//   direction: String,        // 'in' or 'out'
+//   image_base64: String,     // Thumbnail of detected object
+//   processed: bool,          // Has user taken action?
+//   ignored: bool,            // Is this a false positive?
+//   processedAt: Timestamp,   // When user processed it
+//   finalItemName: String,    // Corrected name (if edited)
+//   inventoryUpdated: bool    // Did it update inventory?
+// }
+// 
+// NAVIGATION:
+// - From: CameraScreen → History icon button
+// - To: (Modal) Edit dialog, Apply confirmation, Ignore confirmation
+// 
+// UI COMPONENTS:
+// - StreamBuilder for real-time detection list
+// - Card-based detection items with thumbnails
+// - AlertDialogs for edit/confirm actions
+// - SnackBars for success/error feedback
+// - Status badges for processed detections
+// ============================================================================
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:convert';
 import 'package:intl/intl.dart';
 import 'device_service.dart';
 
+/// Screen displaying detection history for a specific device
+/// 
+/// Shows all detection events with thumbnails, confidence scores,
+/// and allows users to edit, apply, or ignore each detection.
 class DetectionHistoryScreen extends StatelessWidget {
+  /// Device ID whose detection history to display
   final String deviceId;
 
   const DetectionHistoryScreen({super.key, required this.deviceId});

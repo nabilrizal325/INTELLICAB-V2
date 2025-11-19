@@ -1,6 +1,44 @@
+// ============================================================================
+// FILE: add_device_screen.dart
+// PURPOSE: Allows users to pair/claim a new Raspberry Pi device
+// 
+// This screen provides a form for users to enter a device's MAC address
+// and pair it to their account. The device must already be registered in
+// Firestore by the Raspberry Pi (with userId=null) before pairing.
+// 
+// PAIRING FLOW:
+// 1. User runs smart_cabinet_pi_backend.py on Raspberry Pi
+// 2. Pi registers itself in Firestore with userId=null (unpaired)
+// 3. User finds device MAC address (displayed in Pi terminal)
+// 4. User enters MAC address in this screen
+// 5. App calls DeviceService.pairDevice() to set userId
+// 6. Device now appears in user's device list
+// 
+// FEATURES:
+// - Text input for device MAC address
+// - Format validation (MAC address pattern)
+// - Loading state during pairing
+// - Success/error feedback via SnackBars
+// - Auto-navigation back on success
+// 
+// NAVIGATION:
+// - From: DevicesScreen → FAB
+// - To: DevicesScreen (on success)
+// 
+// UI COMPONENTS:
+// - Form with TextFormField for device ID
+// - Validation for MAC address format
+// - Loading indicator during pairing
+// - ElevatedButton for pairing action
+// ============================================================================
+
 import 'package:flutter/material.dart';
 import 'device_service.dart';
 
+/// Screen for pairing a new Raspberry Pi device to user's account
+/// 
+/// Provides a form to enter device MAC address and initiate pairing.
+/// The device must already be registered in Firestore by the Pi.
 class AddDeviceScreen extends StatefulWidget {
   const AddDeviceScreen({super.key});
 
@@ -9,10 +47,23 @@ class AddDeviceScreen extends StatefulWidget {
 }
 
 class _AddDeviceScreenState extends State<AddDeviceScreen> {
+  /// Text controller for device ID input field
   final _deviceIdController = TextEditingController();
+  
+  /// Form key for validation
   final _formKey = GlobalKey<FormState>();
+  
+  /// Loading state flag (shows CircularProgressIndicator)
   bool _isLoading = false;
 
+  /// Attempts to pair the device with entered MAC address
+  /// 
+  /// This method:
+  /// 1. Validates the form input
+  /// 2. Calls DeviceService.pairDevice() with the MAC address
+  /// 3. Shows success SnackBar and navigates back on success
+  /// 4. Shows error SnackBar on failure
+  /// 5. Manages loading state throughout the process
   Future<void> _pairDevice() async {
     if (!_formKey.currentState!.validate()) return;
 

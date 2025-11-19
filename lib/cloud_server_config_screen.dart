@@ -1,7 +1,52 @@
+// ============================================================================
+// FILE: cloud_server_config_screen.dart
+// PURPOSE: Configure cloud detection server connection settings
+// 
+// This screen allows users to set the IP address and port of the cloud
+// detection server (laptop/VM running cloud_detection_server.py). The
+// Raspberry Pi reads this configuration from Firestore and connects to
+// the server when detection is enabled.
+// 
+// DETECTION ARCHITECTURE:
+// Pi Camera → TCP Stream → Cloud Server (YOLO) → Detection Events → Firestore
+// 
+// CONFIGURATION FLOW:
+// 1. User runs cloud_detection_server.py on laptop/cloud instance
+// 2. Server listens on port 8485 (default)
+// 3. User enters server's IP address in this screen
+// 4. Config saved to Firestore: devices/{deviceId}/{cloud_server_ip, cloud_server_port}
+// 5. Pi reads config and connects when detection enabled
+// 6. Pi streams video frames via TCP socket
+// 7. Server runs YOLO detection and logs events
+// 
+// FEATURES:
+// - IP address input with validation
+// - Port number input (default: 8485)
+// - Load existing configuration
+// - Save configuration to Firestore
+// - Input validation (IP format, port range)
+// - Success/error feedback
+// 
+// NETWORK REQUIREMENTS:
+// - Server must be accessible from Pi's network
+// - Firewall must allow port 8485 (or custom port)
+// - For cloud deployment, use public IP or domain name
+// - For local testing, use laptop's local IP (e.g., 192.168.1.100)
+// 
+// NAVIGATION:
+// - From: CameraScreen → "Configure Server" button
+// - To: CameraScreen (back after save)
+// ============================================================================
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+/// Screen for configuring cloud detection server connection
+/// 
+/// Allows users to set the IP address and port of the detection server
+/// that runs YOLO object detection.
 class CloudServerConfigScreen extends StatefulWidget {
+  /// Device ID to configure server settings for
   final String deviceId;
 
   const CloudServerConfigScreen({super.key, required this.deviceId});
@@ -11,17 +56,29 @@ class CloudServerConfigScreen extends StatefulWidget {
 }
 
 class _CloudServerConfigScreenState extends State<CloudServerConfigScreen> {
+  /// Form key for validation
   final _formKey = GlobalKey<FormState>();
+  
+  /// Text controller for IP address input
   final _ipController = TextEditingController();
+  
+  /// Text controller for port number input (default: 8485)
   final _portController = TextEditingController(text: '8485');
+  
+  /// Loading state during save operation
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
+    /// Load existing configuration from Firestore when screen opens
     _loadCurrentConfig();
   }
 
+  /// Loads current cloud server configuration from Firestore
+  /// 
+  /// Fetches cloud_server_ip and cloud_server_port fields from device
+  /// document and populates the text controllers.
   Future<void> _loadCurrentConfig() async {
     final doc = await FirebaseFirestore.instance
         .collection('devices')
@@ -37,6 +94,13 @@ class _CloudServerConfigScreenState extends State<CloudServerConfigScreen> {
     }
   }
 
+  /// Saves cloud server configuration to Firestore
+  /// 
+  /// Validates form inputs and updates device document with:
+  /// - cloud_server_ip: IP address of detection server
+  /// - cloud_server_port: Port number (default 8485)
+  /// 
+  /// Shows success/error feedback via SnackBar and navigates back on success.
   Future<void> _saveConfig() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -79,131 +143,138 @@ class _CloudServerConfigScreenState extends State<CloudServerConfigScreen> {
         ),
         iconTheme: const IconThemeData(color: Colors.black),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Configure Cloud Detection Server',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Enter the IP address of your laptop/server running the detection service.',
-                style: TextStyle(color: Colors.grey),
-              ),
-              const SizedBox(height: 24),
-              TextFormField(
-                controller: _ipController,
-                decoration: InputDecoration(
-                  labelText: 'Server IP Address',
-                  hintText: 'e.g., 192.168.1.100',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+      // Wrap body in SingleChildScrollView to prevent overflow when keyboard appears
+      body: SingleChildScrollView(
+        // Prevents scroll behavior when keyboard is not visible
+        physics: const ClampingScrollPhysics(),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Configure Cloud Detection Server',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Enter the IP address of your laptop/server running the detection service.',
+                  style: TextStyle(color: Colors.grey),
+                ),
+                const SizedBox(height: 24),
+                TextFormField(
+                  controller: _ipController,
+                  decoration: InputDecoration(
+                    labelText: 'Server IP Address',
+                    hintText: 'e.g., 192.168.1.100',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
                   ),
-                  filled: true,
-                  fillColor: Colors.white,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Please enter server IP';
+                    }
+                    // Basic IP validation
+                    final ipRegex = RegExp(r'^(\d{1,3}\.){3}\d{1,3}$');
+                    if (!ipRegex.hasMatch(value.trim())) {
+                      return 'Invalid IP address format';
+                    }
+                    return null;
+                  },
                 ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Please enter server IP';
-                  }
-                  // Basic IP validation
-                  final ipRegex = RegExp(r'^(\d{1,3}\.){3}\d{1,3}$');
-                  if (!ipRegex.hasMatch(value.trim())) {
-                    return 'Invalid IP address format';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _portController,
-                decoration: InputDecoration(
-                  labelText: 'Server Port',
-                  hintText: '8485',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _portController,
+                  decoration: InputDecoration(
+                    labelText: 'Server Port',
+                    hintText: '8485',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
                   ),
-                  filled: true,
-                  fillColor: Colors.white,
+                  keyboardType: TextInputType.number,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Please enter port';
+                    }
+                    final port = int.tryParse(value.trim());
+                    if (port == null || port < 1 || port > 65535) {
+                      return 'Invalid port number';
+                    }
+                    return null;
+                  },
                 ),
-                keyboardType: TextInputType.number,
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Please enter port';
-                  }
-                  final port = int.tryParse(value.trim());
-                  if (port == null || port < 1 || port > 65535) {
-                    return 'Invalid port number';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: _isLoading ? null : _saveConfig,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.pinkAccent.shade100,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: _isLoading ? null : _saveConfig,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.pinkAccent.shade100,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
-                ),
-                child: _isLoading
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                        ),
-                      )
-                    : const Text(
-                        'Save Configuration',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black,
-                        ),
-                      ),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue[50],
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.info_outline, color: Colors.blue[700], size: 20),
-                        const SizedBox(width: 8),
-                        Text(
-                          'How to find your laptop IP:',
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : const Text(
+                          'Save Configuration',
                           style: TextStyle(
+                            fontSize: 16,
                             fontWeight: FontWeight.bold,
-                            color: Colors.blue[700],
+                            color: Colors.black,
                           ),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Windows: Open Command Prompt and type "ipconfig"\n'
-                      'Mac/Linux: Open Terminal and type "ifconfig"',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[700]),
-                    ),
-                  ],
                 ),
-              ),
-            ],
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.info_outline, color: Colors.blue[700], size: 20),
+                          const SizedBox(width: 8),
+                          Text(
+                            'How to find your laptop IP:',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue[700],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Windows: Open Command Prompt and type "ipconfig"\n'
+                        'Mac/Linux: Open Terminal and type "ifconfig"',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                      ),
+                    ],
+                  ),
+                ),
+                // Add extra padding at bottom to ensure content is visible above keyboard
+                SizedBox(height: MediaQuery.of(context).viewInsets.bottom + 20),
+              ],
+            ),
           ),
         ),
       ),
