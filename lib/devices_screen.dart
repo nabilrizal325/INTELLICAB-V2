@@ -1,9 +1,43 @@
+// ============================================================================
+// FILE: devices_screen.dart
+// PURPOSE: Lists all Raspberry Pi devices paired to the current user
+// 
+// This screen displays all smart cabinet camera devices that the user has
+// paired/claimed. It shows real-time device status (online/offline), last
+// seen time, and provides navigation to individual device control screens.
+// 
+// FEATURES:
+// - Real-time device list from Firestore (StreamBuilder)
+// - Online/offline status indicators
+// - Last seen timestamp display
+// - Tap to open device camera control screen
+// - Floating action button to add new devices
+// - Empty state when no devices are paired
+// 
+// NAVIGATION:
+// - From: Homepage → Settings menu → "My Devices"
+// - To: CameraScreen (tap device card)
+// - To: AddDeviceScreen (tap FAB)
+// 
+// UI COMPONENTS:
+// - StreamBuilder for real-time updates
+// - Card-based device list
+// - Status indicator dot (green=online, grey=offline)
+// - Device ID display (truncated MAC address)
+// - Last seen time in relative format ("2h ago")
+// - FloatingActionButton for adding devices
+// ============================================================================
+
 import 'package:flutter/material.dart';
 import 'device_model.dart';
 import 'device_service.dart';
 import 'add_device_screen.dart';
 import 'camera_screen.dart';
 
+/// Screen displaying all devices paired to the current user
+/// 
+/// Shows a real-time list of smart cabinet camera devices with their
+/// online/offline status and allows navigation to device controls.
 class DevicesScreen extends StatelessWidget {
   const DevicesScreen({super.key});
 
