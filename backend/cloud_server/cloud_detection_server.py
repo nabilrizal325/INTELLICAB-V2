@@ -23,6 +23,35 @@ timing_stats = {
     'display': []
 }
 
+# Brand extraction for better inventory matching
+def extract_brand(item_name):
+    """
+    Extract brand from YOLO class name for inventory matching
+    
+    Examples:
+        "coca_cola_can" → "coca cola"
+        "pepsi_bottle" → "pepsi"
+        "sprite_zero" → "sprite"
+        "bottle" → None
+    """
+    # Common brand keywords (add more as needed)
+    brand_keywords = [
+        'coca_cola', 'coke', 'pepsi', 'sprite', 'fanta', 'mountain_dew',
+        'redbull', 'monster', 'gatorade', 'powerade', 'aquafina', 'dasani',
+        'nestle', 'lipton', 'snapple', 'arizona', 'vitamin_water',
+        'perrier', 'evian', 'fiji', 'smartwater', 'propel'
+    ]
+    
+    item_lower = item_name.lower().replace(' ', '_')
+    
+    for keyword in brand_keywords:
+        if keyword in item_lower:
+            # Return cleaned brand name
+            return keyword.replace('_', ' ')
+    
+    # No brand detected
+    return None
+
 class CloudDetectionServer:
     def __init__(self, model_path, firebase_creds, port=8485, show_display=True):
         self.port = port
@@ -214,12 +243,16 @@ class CloudDetectionServer:
         events = self.direction_detector.update(objects)
         track_time = time.time() - track_start
         
-        # Handle events (keep existing code)
+        # Handle events with brand extraction
         for event in events:
             self.total_events += 1
-            print(f"\n🔔 EVENT #{self.total_events}: {event['label']} moved {event['direction']}")
+            detected_brand = extract_brand(event['label'])
+            brand_info = f" (brand: {detected_brand})" if detected_brand else ""
+            print(f"\n🔔 EVENT #{self.total_events}: {event['label']} moved {event['direction']}{brand_info}")
             
             if self.firebase_sender:
+                # Add brand info to event
+                event['detected_brand'] = detected_brand
                 self.firebase_sender.send_event(event)
         
         # Draw display

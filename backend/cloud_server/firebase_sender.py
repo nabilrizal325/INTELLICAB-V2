@@ -30,6 +30,7 @@ class FirebaseSender:
         try:
             event_data = {
                 'item_name': event['label'],
+                'detected_brand': event.get('detected_brand'),  # Brand extracted from class name
                 'direction': event['direction'],
                 'timestamp': firestore.SERVER_TIMESTAMP,
                 'timestamp_local': event['timestamp'],
@@ -41,7 +42,8 @@ class FirebaseSender:
             }
             
             doc_ref = self.db.collection(self.collection_name).add(event_data)
-            print(f"📤 Firebase: {event['label']} - {event['direction']}")
+            brand_info = f" [{event.get('detected_brand')}]" if event.get('detected_brand') else ""
+            print(f"📤 Firebase: {event['label']}{brand_info} - {event['direction']}")
             return True
             
         except Exception as e:
