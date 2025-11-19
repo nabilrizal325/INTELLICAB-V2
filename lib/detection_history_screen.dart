@@ -157,6 +157,8 @@ class _DetectionCard extends StatelessWidget {
     final direction = detection['direction'] as String? ?? 'unknown';
     final processed = detection['processed'] as bool? ?? false;
     final ignored = detection['ignored'] as bool? ?? false;
+    final matchScore = detection['matchScore'] as double?;
+    final matchedItemName = detection['matchedItemName'] as String?;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -237,6 +239,27 @@ class _DetectionCard extends StatelessWidget {
                         ],
                       ],
                     ),
+                    if (matchedItemName != null && matchScore != null) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(Icons.link, size: 12, color: Colors.green[600]),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              'Matched: $matchedItemName (${(matchScore * 100).toStringAsFixed(0)}%)',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.green[700],
+                                fontWeight: FontWeight.w500,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                     if (timestamp != null) ...[
                       const SizedBox(height: 4),
                       Text(

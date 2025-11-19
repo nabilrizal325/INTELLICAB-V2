@@ -264,35 +264,30 @@ class DeviceService {
         .map((doc) => DeviceModel.fromFirestore(doc));
   }
 
-  /// Processes detection and updates inventory based on device location
+  /// Processes detection with AUTOMATIC inventory matching
   /// 
-  /// The DEVICE itself represents a cabinet/storage location. When an item
-  /// is detected going 'in', it's assigned to that device's location.
+  /// MATCHING LOGIC:
+  /// 1. Get detected item name from YOLO (e.g., "bottle", "coca_cola_can")
+  /// 2. Query user's inventory for ALL items
+  /// 3. Try to match using multiple strategies:
+  ///    a) Exact match: item_name == inventory.name
+  ///    b) Brand match: detected_brand matches inventory.brand
+  ///    c) Fuzzy match: similar words in name
+  /// 4. If match found and direction='in' from unorganized → move to device
+  /// 5. Update quantity based on direction
   /// 
-  /// FLOW:
-  /// 1. Get device info (device IS the cabinet)
-  /// 2. Find item in inventory by name
-  /// 3. If item in "unorganized" and direction='in' → assign to this device
-  /// 4. Otherwise update quantity normally
-  /// 5. Mark detection as processed
+  /// EXAMPLE FLOW:
+  /// ```
+  /// User's Inventory:
+  ///   - name: "Coca Cola", brand: "Coca Cola", deviceId: "unorganized"
+  ///   - name: "Sprite", brand: "Sprite", deviceId: "unorganized"
   /// 
-  /// Parameters:
-  /// - detectionId: ID of detection event to process
-  /// - deviceId: Device that detected the item (represents the cabinet)
-  /// - itemName: Name of detected item
-  /// - direction: 'in' or 'out'
-  /// - correctedItemName: User-corrected name if edited
-  /// 
-  /// Example:
-  /// ```dart
-  /// // Device "AA:BB:CC:DD:EE:FF" detects Coca Cola going in:
-  /// await processDetection(
-  ///   detectionId: 'det_123',
-  ///   deviceId: 'AA:BB:CC:DD:EE:FF',
-  ///   itemName: 'Coca Cola',
-  ///   direction: 'in',
-  /// );
-  /// // Result: If Coca Cola was in "unorganized", it's now assigned to device AA:BB:CC:DD:EE:FF
+  /// Camera detects: "coca_cola_bottle" going IN
+  ///   ↓
+  /// Matching: "coca cola" contains "Coca Cola" ✅
+  ///   ↓
+  /// Action: Move "Coca Cola" from unorganized to device AA:BB:CC:DD:EE:FF
+  ///         Increase quantity by 1
   /// ```
   Future<void> processDetection({
     required String detectionId,
@@ -304,7 +299,7 @@ class DeviceService {
     final userId = _auth.currentUser?.uid;
     if (userId == null) throw Exception('User not logged in');
 
-    // Get device info - the device IS the cabinet
+    // Get device info
     final deviceDoc = await _firestore
         .collection('devices')
         .doc(deviceId)
@@ -315,52 +310,70 @@ class DeviceService {
     }
 
     final deviceData = deviceDoc.data()!;
-    final deviceName = deviceData['name'] as String? ?? deviceId;
+    final deviceName = deviceData['name'] as String? ?? deviceId.substring(0, 8);
 
-    // Use corrected name if provided
+    // Use corrected name if provided, otherwise use detected name
     final finalItemName = correctedItemName ?? itemName;
-
+    
     final userDocRef = _firestore.collection('User').doc(userId);
 
-    // Find inventory item by name
-    final inventoryQuery = await userDocRef
+    // Get detection details for better matching
+    final detectionDoc = await _firestore
+        .collection('devices')
+        .doc(deviceId)
+        .collection('detections')
+        .doc(detectionId)
+        .get();
+    
+    final detectionData = detectionDoc.data();
+    final detectedBrand = detectionData?['detected_brand'] as String?;
+
+    // SMART MATCHING: Get ALL inventory items (not just by name)
+    final allInventoryItems = await userDocRef
         .collection('inventory')
-        .where('name', isEqualTo: finalItemName)
-        .limit(1)
         .get();
 
-    if (inventoryQuery.docs.isEmpty) {
-      // Item not in inventory - create it and assign to this device
-      if (direction == 'in') {
-        await userDocRef.collection('inventory').add({
-          'name': finalItemName,
-          'deviceId': deviceId,           // Device ID instead of cabinetId
-          'deviceName': deviceName,       // Device name for display
-          'quantity': 1,
-          'category': 'Detected',
-          'added_date': FieldValue.serverTimestamp(),
-          'last_updated': FieldValue.serverTimestamp(),
-        });
-        print('✅ Created new inventory item: $finalItemName at $deviceName');
-      } else {
-        print('⚠️ Item "$finalItemName" removed but was not in inventory');
+    // Try to find matching item using multiple strategies
+    QueryDocumentSnapshot? matchedItem;
+    double bestMatchScore = 0.0;
+
+    for (var doc in allInventoryItems.docs) {
+      final itemData = doc.data();
+      final inventoryName = (itemData['name'] as String?)?.toLowerCase() ?? '';
+      final inventoryBrand = (itemData['brand'] as String?)?.toLowerCase() ?? '';
+      
+      // Calculate match score
+      double score = _calculateMatchScore(
+        detectedName: finalItemName.toLowerCase(),
+        detectedBrand: detectedBrand?.toLowerCase(),
+        inventoryName: inventoryName,
+        inventoryBrand: inventoryBrand,
+      );
+
+      if (score > bestMatchScore) {
+        bestMatchScore = score;
+        matchedItem = doc;
       }
-    } else {
-      // Item exists - check if it needs to be moved from unorganized
-      final inventoryDoc = inventoryQuery.docs.first;
-      final itemData = inventoryDoc.data();
+    }
+
+    // Require at least 60% match confidence
+    if (matchedItem != null && bestMatchScore >= 0.6) {
+      final itemData = matchedItem.data() as Map<String, dynamic>;
       final currentDeviceId = itemData['deviceId'] as String?;
       final currentQuantity = itemData['quantity'] as int? ?? 0;
+      final inventoryItemName = itemData['name'] as String;
 
-      // If item is in unorganized and detection is 'in', assign it to this device
+      print('🎯 Matched detected "$finalItemName" with inventory "$inventoryItemName" (${(bestMatchScore * 100).toStringAsFixed(0)}% confidence)');
+
+      // If item is in unorganized and detection is 'in', move it to this device
       if (currentDeviceId == 'unorganized' && direction == 'in') {
-        await inventoryDoc.reference.update({
-          'deviceId': deviceId,           // Assign to this device
-          'deviceName': deviceName,       // Update device name
+        await matchedItem.reference.update({
+          'deviceId': deviceId,
+          'deviceName': deviceName,
           'quantity': currentQuantity + 1,
           'last_updated': FieldValue.serverTimestamp(),
         });
-        print('✅ Moved $finalItemName from unorganized to $deviceName');
+        print('✅ Moved $inventoryItemName from unorganized to $deviceName');
       } else {
         // Normal quantity update
         int newQuantity;
@@ -370,28 +383,128 @@ class DeviceService {
           newQuantity = (currentQuantity - 1).clamp(0, 999);
         }
 
-        await inventoryDoc.reference.update({
+        await matchedItem.reference.update({
           'quantity': newQuantity,
           'last_updated': FieldValue.serverTimestamp(),
         });
-        print('✅ Updated inventory: $finalItemName ($currentQuantity → $newQuantity)');
+        print('✅ Updated inventory: $inventoryItemName ($currentQuantity → $newQuantity)');
+      }
+
+      // Mark detection as processed with match info
+      await _firestore
+          .collection('devices')
+          .doc(deviceId)
+          .collection('detections')
+          .doc(detectionId)
+          .update({
+        'processed': true,
+        'processedAt': FieldValue.serverTimestamp(),
+        'matchScore': bestMatchScore,
+        'matchedItemName': inventoryItemName,
+        'inventoryUpdated': true,
+        'deviceId': deviceId,
+        'deviceName': deviceName,
+      });
+    } else {
+      // No match found - log for manual review
+      print('⚠️ No inventory match for "$finalItemName" (best score: ${(bestMatchScore * 100).toStringAsFixed(0)}%)');
+      
+      // If direction is 'in', create new item at this device
+      if (direction == 'in') {
+        await userDocRef.collection('inventory').add({
+          'name': finalItemName,
+          'brand': detectedBrand ?? '',
+          'deviceId': deviceId,
+          'deviceName': deviceName,
+          'quantity': 1,
+          'category': 'Auto-detected',
+          'added_date': FieldValue.serverTimestamp(),
+          'last_updated': FieldValue.serverTimestamp(),
+        });
+        print('✅ Created new inventory item: $finalItemName at $deviceName');
+      }
+
+      // Mark detection as processed (no match)
+      await _firestore
+          .collection('devices')
+          .doc(deviceId)
+          .collection('detections')
+          .doc(detectionId)
+          .update({
+        'processed': true,
+        'processedAt': FieldValue.serverTimestamp(),
+        'matchScore': bestMatchScore,
+        'matchedItemName': null,
+        'inventoryUpdated': direction == 'in',
+        'deviceId': deviceId,
+        'deviceName': deviceName,
+      });
+    }
+  }
+
+  /// Calculates match score between detected item and inventory item
+  /// 
+  /// SCORING SYSTEM:
+  /// - Exact name match: 1.0
+  /// - Brand exact match: +0.4
+  /// - Name contains detected words: 0.7
+  /// - Detected name contains inventory name: 0.6
+  /// - Word overlap: 0.3-0.8 based on percentage
+  /// 
+  /// Returns: Score from 0.0 to 1.0
+  double _calculateMatchScore({
+    required String detectedName,
+    String? detectedBrand,
+    required String inventoryName,
+    required String inventoryBrand,
+  }) {
+    double score = 0.0;
+
+    // Clean and normalize strings
+    final cleanDetected = detectedName.replaceAll('_', ' ').trim();
+    final cleanInventory = inventoryName.trim();
+
+    // 1. EXACT MATCH (best case)
+    if (cleanDetected == cleanInventory) {
+      return 1.0;
+    }
+
+    // 2. BRAND MATCH (very strong signal)
+    if (detectedBrand != null && 
+        detectedBrand.isNotEmpty && 
+        inventoryBrand.isNotEmpty) {
+      if (inventoryBrand.contains(detectedBrand) || 
+          detectedBrand.contains(inventoryBrand)) {
+        score += 0.4;
       }
     }
 
-    // Mark detection as processed
-    await _firestore
-        .collection('devices')
-        .doc(deviceId)
-        .collection('detections')
-        .doc(detectionId)
-        .update({
-      'processed': true,
-      'processedAt': FieldValue.serverTimestamp(),
-      'finalItemName': finalItemName,
-      'inventoryUpdated': true,
-      'deviceId': deviceId,
-      'deviceName': deviceName,
-    });
+    // 3. SUBSTRING MATCH (one contains the other)
+    if (cleanInventory.contains(cleanDetected)) {
+      score += 0.7;
+    } else if (cleanDetected.contains(cleanInventory)) {
+      score += 0.6;
+    }
+
+    // 4. WORD OVERLAP (count matching words)
+    final detectedWords = cleanDetected.split(' ').toSet();
+    final inventoryWords = cleanInventory.split(' ').toSet();
+    
+    final commonWords = detectedWords.intersection(inventoryWords);
+    final totalWords = detectedWords.union(inventoryWords);
+    
+    if (totalWords.isNotEmpty) {
+      final wordOverlapScore = commonWords.length / totalWords.length;
+      score += wordOverlapScore * 0.5;
+    }
+
+    // 5. BRAND IN NAME (brand mentioned in product name)
+    if (inventoryBrand.isNotEmpty && 
+        cleanDetected.contains(inventoryBrand)) {
+      score += 0.3;
+    }
+
+    return score.clamp(0.0, 1.0);
   }
 
   /// Marks a detection as ignored (false positive)
