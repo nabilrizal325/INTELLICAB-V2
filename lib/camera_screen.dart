@@ -420,7 +420,7 @@ class _CameraScreenState extends State<CameraScreen> {
                                     value,
                                   )
                               : null,
-                          activeColor: Colors.green,
+                          activeThumbColor: Colors.green,
                         ),
                       ],
                     ),
