@@ -61,8 +61,9 @@ class _HomePageState extends State<HomePage> {
           final data = doc.data();
           final qtyField = data['quantity'];
           int qty = 0;
-          if (qtyField is num) qty = qtyField.toInt();
-          else if (qtyField is String) qty = int.tryParse(qtyField) ?? 0;
+          if (qtyField is num) {
+            qty = qtyField.toInt();
+          } else if (qtyField is String) qty = int.tryParse(qtyField) ?? 0;
 
           if (qty <= reminderLevel) {
             final itemName = '${data['brand'] ?? ''} ${data['name'] ?? ''}'.trim();
@@ -672,8 +673,8 @@ class InventorySection extends StatelessWidget {
           MaterialPageRoute(
             builder: (context) => CabinetDetailsPage(
               title: title,
-              cabinetId: cabinetId,
-              items: items,
+              deviceId: 'unorganized',
+              isUnorganized: true,
             ),
           ),
         );
@@ -803,8 +804,8 @@ class EnhancedInventorySection extends StatelessWidget {
           MaterialPageRoute(
             builder: (context) => CabinetDetailsPage(
               title: title,
-              cabinetId: deviceId,  // Using deviceId as location identifier
-              items: items,
+              deviceId: deviceId,
+              isUnorganized: deviceId == 'unorganized',
             ),
           ),
         );
