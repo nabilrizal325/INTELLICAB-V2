@@ -22,14 +22,13 @@ class CabinetDetailsPage extends StatefulWidget {
 }
 
 class _CabinetDetailsPageState extends State<CabinetDetailsPage> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  
   final FirebaseAuth _auth = FirebaseAuth.instance;
   
   // Map itemId -> detection status ('in'/'out'/'unknown')
   final Map<String, String> _itemStatus = {};
   StreamSubscription<QuerySnapshot>? _detectionSub;
   
-  String? _editingDeviceName;
 
   // Helper method to safely format timestamp
   String _formatDate(dynamic timeStamp) {
