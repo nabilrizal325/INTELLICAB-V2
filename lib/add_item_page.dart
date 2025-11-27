@@ -20,6 +20,7 @@ late mobile.MobileScannerController _scannerController;
 
 
 class _AddItemPageState extends State<AddItemPage> {
+  bool _isLoading = false;
   
   @override
   void initState() {
@@ -126,6 +127,8 @@ void _onBarcodeDetected(mobile.BarcodeCapture capture) async {
 
   /// 🔹 Process scanned barcode: fetch from global, then add to user inventory
   Future<void> _processScannedBarcode(String barcode) async {
+    setState(() => _isLoading = true);
+    
     try {
       // Step 1: Lookup product in food_products (global database)
       final query = await _firestore
@@ -157,10 +160,10 @@ void _onBarcodeDetected(mobile.BarcodeCapture capture) async {
       final userDoc = await userInvRef.get();
 
       if (userDoc.exists) {
-        // If item already exists → increment quantity and add expiry
+        // If item already exists → increment quantity and update expiry date
         await userInvRef.update({
           'quantity': FieldValue.increment(1),
-          'expiryDates': FieldValue.arrayUnion([expiryDate]), // Store as string
+          'expiryDates': [expiryDate], // Store as array only
           'lastUpdated': FieldValue.serverTimestamp(),
         });
       } else {
@@ -170,7 +173,7 @@ void _onBarcodeDetected(mobile.BarcodeCapture capture) async {
           'brand': brand,
           'name': name,
           'quantity': 1,
-          'expiryDates': [expiryDate], // Store as string
+          'expiryDates': [expiryDate], // Store as array only
           'cabinetName': 'unorganized',
           'location': 'out',
           'created_at': FieldValue.serverTimestamp(),
@@ -182,6 +185,8 @@ void _onBarcodeDetected(mobile.BarcodeCapture capture) async {
     } catch (e) {
       debugPrint("Error processing barcode: $e");
       _showErrorDialog("Something went wrong. Please try again.");
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
@@ -302,25 +307,38 @@ void _onBarcodeDetected(mobile.BarcodeCapture capture) async {
           )
         ],
       ),
-      body: Column(
+      body: Stack(
         children: [
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          Column(
             children: [
-              _buildToggleButton('Scan', isScanMode, () {
-                setState(() => isScanMode = true);
-              }),
-              const SizedBox(width: 10),
-              _buildToggleButton('Manual', !isScanMode, () {
-                setState(() => isScanMode = false);
-              }),
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _buildToggleButton('Scan', isScanMode, () {
+                    setState(() => isScanMode = true);
+                  }),
+                  const SizedBox(width: 10),
+                  _buildToggleButton('Manual', !isScanMode, () {
+                    setState(() => isScanMode = false);
+                  }),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Expanded(
+                child: isScanMode ? _buildScanUI() : ManualEntryForm(),
+              ),
             ],
           ),
-          const SizedBox(height: 20),
-          Expanded(
-            child: isScanMode ? _buildScanUI() : ManualEntryForm(),
-          ),
+          if (_isLoading)
+            Container(
+              color: Colors.black.withOpacity(0.3),
+              child: const Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              ),
+            ),
         ],
       ),
     );

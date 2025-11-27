@@ -17,6 +17,7 @@ class _ManualEntryFormState extends State<ManualEntryForm> {
   final _formKey = GlobalKey<FormState>();
   File? _imageFile;
   final picker = ImagePicker();
+  bool _isSubmitting = false;
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _brandController = TextEditingController();
@@ -25,14 +26,46 @@ class _ManualEntryFormState extends State<ManualEntryForm> {
 
   // Initialize Cloudinary (unsigned)
   final cloudinary = CloudinaryPublic(
-    'dqdh5szh2', // 🔹 Your Cloud Name
-    'unsigned_upload', // 🔹 Your unsigned preset
+    'dqdh5szh2', // Your Cloud Name
+    'unsigned_upload', // Your unsigned preset
     cache: false,
   );
 
+  // 🆕 Show dialog to choose Camera or Gallery
   Future<void> _pickImage() async {
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Wrap(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo_camera),
+                title: const Text('Take Photo'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _getImage(ImageSource.camera);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Choose from Gallery'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _getImage(ImageSource.gallery);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // 🆕 Common function for camera/gallery
+  Future<void> _getImage(ImageSource source) async {
     try {
-      final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+      final pickedFile = await picker.pickImage(source: source);
       if (pickedFile != null) {
         setState(() => _imageFile = File(pickedFile.path));
       }
@@ -90,6 +123,8 @@ class _ManualEntryFormState extends State<ManualEntryForm> {
       return;
     }
 
+    setState(() => _isSubmitting = true);
+
     try {
       // Step 1: Upload image to Cloudinary
       String? imageUrl;
@@ -97,13 +132,12 @@ class _ManualEntryFormState extends State<ManualEntryForm> {
         imageUrl = await _uploadToCloudinary(_imageFile!);
       }
 
-      // Step 2: Prepare Firestore item (full data for user's inventory)
+      // Step 2: Prepare Firestore item
       final item = {
         'name': _nameController.text.trim(),
         'brand': _brandController.text.trim(),
         'quantity': int.tryParse(_quantityController.text) ?? 0,
-        // Store expiry dates as an array to match project convention
-        'expiryDates': [_expiryController.text.trim()],
+        'expiryDates': [_expiryController.text.trim()], // Store as array only
         'cabinetId': 'unorganized',
         'isItemIn': false,
         'timeStamp': DateFormat("dd/MM/yyyy").format(DateTime.now()),
@@ -112,14 +146,14 @@ class _ManualEntryFormState extends State<ManualEntryForm> {
         'imageUrl': imageUrl,
       };
 
-      // Step 3: Save full item under User inventory
+      // Step 3: Save to user's inventory
       await FirebaseFirestore.instance
           .collection('User')
           .doc(user.uid)
           .collection('inventory')
           .add(item);
 
-      // Step 4: Save simplified data (for food product listing)
+      // Step 4: Save simplified food product
       await FirebaseFirestore.instance.collection('food_products').add({
         'name': _nameController.text.trim(),
         'brand': _brandController.text.trim(),
@@ -137,6 +171,8 @@ class _ManualEntryFormState extends State<ManualEntryForm> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Failed to save item: $e")),
       );
+    } finally {
+      setState(() => _isSubmitting = false);
     }
   }
 
@@ -231,9 +267,11 @@ class _ManualEntryFormState extends State<ManualEntryForm> {
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               _button(
-                  "Reset", const Color.fromARGB(255, 248, 207, 255), _resetForm),
+                  "Reset", const Color.fromARGB(255, 248, 207, 255), _resetForm,
+                  isLoading: false),
               _button(
-                  "Save", const Color.fromARGB(255, 248, 207, 255), _saveItem),
+                  "Save", const Color.fromARGB(255, 248, 207, 255), _saveItem,
+                  isLoading: _isSubmitting),
             ],
           ),
         ],
@@ -241,17 +279,27 @@ class _ManualEntryFormState extends State<ManualEntryForm> {
     );
   }
 
-  Widget _button(String text, Color color, VoidCallback onPressed) {
+  Widget _button(String text, Color color, VoidCallback onPressed,
+      {bool isLoading = false}) {
     return ElevatedButton(
-      onPressed: onPressed,
+      onPressed: isLoading ? null : onPressed,
       style: ElevatedButton.styleFrom(
-        backgroundColor: color,
+        backgroundColor: isLoading ? Colors.grey : color,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 12),
       ),
-      child: Text(
-        text,
-        style: const TextStyle(color: Color.fromARGB(255, 1, 0, 0)),
+      child: isLoading
+          ? const SizedBox(
+              height: 20,
+              width: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
+              ),
+            )
+          : Text(
+              text,
+              style: const TextStyle(color: Color.fromARGB(255, 1, 0, 0)),
       ),
     );
   }
