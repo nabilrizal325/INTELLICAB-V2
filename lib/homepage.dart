@@ -7,7 +7,6 @@ import 'package:intellicab/cabinet_details_page.dart';
 import 'package:intellicab/gorcery_list.dart';
 import 'package:intellicab/notifications_page.dart';
 import 'package:intellicab/devices_screen.dart';
-import 'package:intellicab/notifications_page.dart'; // Add this import
 import 'package:intellicab/notification_service.dart';
 import 'profile_page.dart';
 import 'package:intl/intl.dart';
