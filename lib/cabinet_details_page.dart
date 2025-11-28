@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 class CabinetDetailsPage extends StatefulWidget {
   final String title;
@@ -22,20 +21,15 @@ class CabinetDetailsPage extends StatefulWidget {
 }
 
 class _CabinetDetailsPageState extends State<CabinetDetailsPage> {
-  
   final FirebaseAuth _auth = FirebaseAuth.instance;
   
   // Map itemId -> detection status ('in'/'out'/'unknown')
   final Map<String, String> _itemStatus = {};
   StreamSubscription<QuerySnapshot>? _detectionSub;
-  
-  final _auth = FirebaseAuth.instance;
-  List<Map<String, dynamic>> _currentItems = [];
 
   @override
   void initState() {
     super.initState();
-    _currentItems = List.from(widget.items);
     _initDetectionListener();
     _migrateExpiryDateFormat(); // One-time migration to clean up data
   }
@@ -455,7 +449,6 @@ class _CabinetDetailsPageState extends State<CabinetDetailsPage> {
       final newExpiry = expiryController.text.trim();
 
       try {
-        // Update in Firestore - using inventory collection
         final updateData = {
           'brand': newBrand,
           'name': newName,
@@ -463,31 +456,16 @@ class _CabinetDetailsPageState extends State<CabinetDetailsPage> {
           'updatedAt': FieldValue.serverTimestamp(),
         };
 
-        // Only update expiryDates array if expiry date is not empty
         if (newExpiry.isNotEmpty) {
-          updateData['expiryDates'] = [newExpiry]; // Store as array with single date
+          updateData['expiryDates'] = [newExpiry];
           debugPrint('✅ Updating expiryDates to: [$newExpiry]');
         }
 
-        // Also delete old expiryDate field if it exists (cleanup)
         await _getInventoryCollection().doc(id).update({
           ...updateData,
           'expiryDate': FieldValue.delete(),
         });
 
-        // Update local state
-        setState(() {
-          _currentItems[index] = {
-            ..._currentItems[index],
-            'brand': newBrand,
-            'name': newName,
-            'quantity': newQty,
-            'expiryDates': newExpiry.isNotEmpty ? [newExpiry] : null,
-            'expiryDate': null, // Remove old field
-          };
-        });
-
-        // Update grocery list
         await _updateGroceryList(newBrand, newName, newQty);
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -506,7 +484,6 @@ class _CabinetDetailsPageState extends State<CabinetDetailsPage> {
       }
     }
 
-    // Clean up controllers
     brandController.dispose();
     nameController.dispose();
     qtyController.dispose();
@@ -537,21 +514,17 @@ class _CabinetDetailsPageState extends State<CabinetDetailsPage> {
 
     if (confirmed == true) {
       try {
-        // Get item data before deletion for grocery list update
-        final item = _currentItems[index];
+        // Instead, get item data from Firestore
+        final itemDoc = await _getInventoryCollection().doc(itemId).get();
+        if (!itemDoc.exists) return;
+        
+        final item = itemDoc.data()!;
         final brand = item['brand'] ?? '';
         final name = item['name'] ?? '';
         final qty = item['quantity'] ?? 0;
 
-        // Delete from Firestore - using inventory collection
         await _getInventoryCollection().doc(itemId).delete();
 
-        // Update local state
-        setState(() {
-          _currentItems.removeAt(index);
-        });
-
-        // Remove from grocery list if needed
         if (qty <= 1) {
           final user = _auth.currentUser;
           if (user != null) {
@@ -733,7 +706,7 @@ class _CabinetDetailsPageState extends State<CabinetDetailsPage> {
                       statusText = 'Unknown';
                     }
 
-                return Container(
+                    return Container(
                   margin: const EdgeInsets.only(bottom: 12),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -833,7 +806,7 @@ class _CabinetDetailsPageState extends State<CabinetDetailsPage> {
                               IconButton(
                                 icon: const Icon(Icons.delete,
                                     color: Colors.red, size: 20),
-                                onPressed: () => _deleteItem(id, index),
+                                onPressed: () => _deleteItem(itemId, index),
                               ),
                             ],
                           ),
@@ -843,7 +816,9 @@ class _CabinetDetailsPageState extends State<CabinetDetailsPage> {
                   ),
                 );
               },
-            ),
+            );
+              }
+    )
     );
   }
 }
