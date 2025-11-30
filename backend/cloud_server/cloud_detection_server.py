@@ -110,46 +110,43 @@ class CloudDetectionServer:
             print("\n📊 No statistics available\n")
         
     def start_server(self):
-        """Start listening for camera connections"""
-        # Create socket
+        """Start socket server and accept connections"""
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server_socket.bind(('0.0.0.0', self.port))
         server_socket.listen(5)
         
-        print(f"\n{'='*60}")
-        print(f"🔌 Server listening on port {self.port}")
-        print(f"{'='*60}")
-        print(f"\n⏳ Waiting for Raspberry Pi to connect...")
-        print(f"   Make sure Pi is running the camera client")
-        print(f"   and connected to the same network\n")
+        print(f"🚀 Cloud detection server listening on port {self.port}")
+        print("Waiting for Pi devices to connect...")
         
-        try:
-            # Accept connection
-            conn, addr = server_socket.accept()
-            print(f"\n✅ Connected to Raspberry Pi at {addr}")
-            print(f"\n{'='*60}")
-            print("🎥 DETECTION RUNNING")
-            print(f"{'='*60}\n")
-            
-            # Process frames
-            self.process_frames(conn)
-            
-        except KeyboardInterrupt:
-            print("\n\n⏹️  Server stopped by user")
-        except Exception as e:
-            print(f"\n❌ Error: {e}")
-        finally:
-            server_socket.close()
-            if self.show_display:
-                cv2.destroyAllWindows()
-            self.print_stats()
+        # ⭐ Keep server running in loop
+        while True:
+            try:
+                conn, addr = server_socket.accept()
+                print(f"\n📥 New connection from {addr}")
+                
+                # Process frames from this Pi device
+                self.process_frames(conn)
+                
+                # ⭐ After Pi disconnects, continue accepting new connections
+                print(f"📤 Device {addr} disconnected")
+                print("Waiting for next connection...")
+                
+            except KeyboardInterrupt:
+                print("\n⏹️  Server shutting down...")
+                break
+            except Exception as e:
+                print(f"⚠️  Connection error: {e}")
+                print("Waiting for next connection...")
+                continue
+    
+        server_socket.close()
     
     def process_frames(self, conn):
         """Process incoming frames from camera"""
         print("📥 Client connected")
         
-        # ⭐ NEW: Receive device_id first
+        # Receive device_id
         try:
             device_id_size = struct.unpack("Q", conn.recv(8))[0]
             device_id = conn.recv(device_id_size).decode('utf-8')
@@ -157,12 +154,10 @@ class CloudDetectionServer:
             self.current_device_id = device_id
         except Exception as e:
             print(f"❌ Failed to receive device_id: {e}")
+            conn.close()
             return
         
-        data = b""
-        payload_size = struct.calcsize("Q")  # Changed from "L" to "Q"
-        self.start_time = time.time()
-        
+        # ⭐ Wrap frame processing in try-except
         try:
             while True:
                 # Receive frame size
@@ -205,12 +200,14 @@ class CloudDetectionServer:
                 
         except KeyboardInterrupt:
             raise
-        except ConnectionError as e:
-            print(f"\n❌ {e}")
+        except ConnectionResetError:
+            print(f"🔌 Device {device_id} disconnected (connection reset)")
         except Exception as e:
-            print(f"\n❌ Processing error: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"⚠️  Error processing frames from {device_id}: {e}")
+        finally:
+            conn.close()
+            print(f"✅ Connection closed for {device_id}")
+            # ⭐ Server continues running, waiting for next connection
     
     def process_single_frame(self, frame):
         """Process a single frame - run detection and tracking"""
