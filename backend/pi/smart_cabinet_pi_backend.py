@@ -310,23 +310,29 @@ class SmartCabinetPiBackend:
             self.stop_detection()
     
     def stop_detection(self):
-        """Stop detection"""
+        """Stop detection thread and close connection"""
+        print("\n⏹️  Stopping detection...")
         self.running = False
         
-        if self.socket:
+        if hasattr(self, 'detection_thread') and self.detection_thread:
+            self.detection_thread.join(timeout=5)
+            print("✅ Detection thread stopped")
+        
+        # ⭐ Close socket gracefully
+        if hasattr(self, 'socket') and self.socket:
             try:
+                self.socket.shutdown(socket.SHUT_RDWR)
                 self.socket.close()
+                print("🔌 Disconnected from cloud server")
             except:
                 pass
             self.socket = None
         
-        # Update status
+        # Update Firebase status
         self.db.collection('devices').document(self.device_id).update({
             'detection_enabled': False,  # Changed from detection_running
             'lastSeen': firestore.SERVER_TIMESTAMP
         })
-        
-        print("⏹️  Detection stopped")
     
     def heartbeat(self):
         """Send heartbeat to Firebase every 10 seconds"""
@@ -375,6 +381,33 @@ class SmartCabinetPiBackend:
             })
             
             print("👋 Backend stopped")
+    
+    import threading
+
+def start_server(self):
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_socket.bind(('0.0.0.0', self.port))
+    server_socket.listen(5)
+    
+    print(f"🚀 Cloud detection server listening on port {self.port}")
+    
+    while True:
+        try:
+            conn, addr = server_socket.accept()
+            print(f"\n📥 New connection from {addr}")
+            
+            # ⭐ Handle each connection in separate thread
+            client_thread = threading.Thread(
+                target=self.process_frames,
+                args=(conn,),
+                daemon=True
+            )
+            client_thread.start()
+            
+        except KeyboardInterrupt:
+            print("\n⏹️  Server shutting down...")
+            break
 
 
 if __name__ == '__main__':
