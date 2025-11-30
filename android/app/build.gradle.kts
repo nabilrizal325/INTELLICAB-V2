@@ -17,10 +17,13 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
         isCoreLibraryDesugaringEnabled = true
+        
     }
 
     kotlinOptions {
         jvmTarget = JavaVersion.VERSION_11.toString()
+
+        freeCompilerArgs += listOf("-Xlint:unchecked")
     }
 
     defaultConfig {
@@ -59,5 +62,5 @@ dependencies {
   // https://firebase.google.com/docs/android/setup#available-libraries
   
   // Core library desugaring for flutter_local_notifications
-  coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+  coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
