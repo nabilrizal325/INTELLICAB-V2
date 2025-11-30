@@ -263,7 +263,13 @@ class SmartCabinetPiBackend:
             # Connect to cloud server
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.connect((self.cloud_server_ip, self.cloud_server_port))
-            print(f"✅ Connected to cloud server at {self.cloud_server_ip}")
+            print(f"✅ Connected to cloud server")
+            
+            # ⭐ NEW: Send device_id to server
+            device_id_bytes = self.device_id.encode('utf-8')
+            self.socket.sendall(struct.pack("Q", len(device_id_bytes)))
+            self.socket.sendall(device_id_bytes)
+            print(f"📤 Sent device_id: {self.device_id}")
             
             frame_count = 0
             start_time = time.time()
