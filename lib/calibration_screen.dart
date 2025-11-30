@@ -344,6 +344,46 @@ class _LinePainter extends CustomPainter {
 
       canvas.drawCircle(startPoint!, 8, circlePaint);
       canvas.drawCircle(endPoint!, 8, circlePaint);
+
+      // Calculate midpoint of the line
+      final midX = (startPoint!.dx + endPoint!.dx) / 2;
+      final midY = (startPoint!.dy + endPoint!.dy) / 2;
+
+      // Text painter setup
+      final textStyle = TextStyle(
+        color: Colors.white,
+        fontSize: 20,
+        fontWeight: FontWeight.bold,
+        shadows: [
+          Shadow(
+            blurRadius: 4,
+            color: Colors.black,
+            offset: Offset(1, 1),
+          ),
+        ],
+      );
+
+      // Draw "OUT ↑" label above the line
+      final outTextPainter = TextPainter(
+        text: TextSpan(text: 'OUT ↑', style: textStyle),
+        textDirection: TextDirection.ltr,
+      );
+      outTextPainter.layout();
+      outTextPainter.paint(
+        canvas,
+        Offset(midX - outTextPainter.width / 2, midY - 40),
+      );
+
+      // Draw "IN ↓" label below the line
+      final inTextPainter = TextPainter(
+        text: TextSpan(text: 'IN ↓', style: textStyle.copyWith(color: Colors.green)),
+        textDirection: TextDirection.ltr,
+      );
+      inTextPainter.layout();
+      inTextPainter.paint(
+        canvas,
+        Offset(midX - inTextPainter.width / 2, midY + 20),
+      );
     }
   }
 
