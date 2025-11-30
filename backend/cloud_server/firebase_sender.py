@@ -22,30 +22,52 @@ class FirebaseSender:
             print("Events will be logged to console only")
     
     def send_event(self, event):
-        """Send detection event to Firebase"""
+        """Send detection event to Firebase under specific device"""
         if not self.initialized:
             print(f"[OFFLINE] {event['label']} moved {event['direction']}")
             return False
         
         try:
+            # ⭐ Get device_id from event
+            device_id = event.get('device_id')
+            
+            if not device_id:
+                print("❌ No device_id in event - cannot save detection")
+                return False
+            
+            # ⭐ Save to devices/{deviceId}/detections subcollection
+            detection_ref = self.db.collection('devices').document(device_id).collection('detections').document()
+            
             event_data = {
-                'item_name': event['label'],
-                'detected_brand': event.get('detected_brand'),  # Brand extracted from class name
+                'label': event['label'],
+                'detected_brand': event.get('detected_brand'),
                 'direction': event['direction'],
+                'confidence': event.get('confidence', 0.0),
                 'timestamp': firestore.SERVER_TIMESTAMP,
                 'timestamp_local': event['timestamp'],
                 'object_id': event['object_id'],
-                'device': 'cloud_camera',
-                'user_id': 'nabilrizal325',  # Your user ID
-                'status': 'unread',
-                'processed': False
+                'applied': False,
+                'bbox': event.get('bbox', [])
             }
             
-            doc_ref = self.db.collection(self.collection_name).add(event_data)
+            detection_ref.set(event_data)
+            
             brand_info = f" [{event.get('detected_brand')}]" if event.get('detected_brand') else ""
-            print(f"📤 Firebase: {event['label']}{brand_info} - {event['direction']}")
+            print(f"📤 Firebase: {event['label']}{brand_info} - {event['direction']} (device: {device_id})")
             return True
             
         except Exception as e:
             print(f"❌ Firebase send error: {e}")
             return False
+
+    def process_events(self, events):
+        for event in events:
+            self.total_events += 1
+            detected_brand = extract_brand(event['label'])
+            
+            # ⭐ Add device_id to event
+            event['device_id'] = self.current_device_id
+            event['detected_brand'] = detected_brand
+            
+            if self.firebase_sender:
+                self.firebase_sender.send_event(event)

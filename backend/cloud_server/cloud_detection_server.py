@@ -147,6 +147,18 @@ class CloudDetectionServer:
     
     def process_frames(self, conn):
         """Process incoming frames from camera"""
+        print("📥 Client connected")
+        
+        # ⭐ NEW: Receive device_id first
+        try:
+            device_id_size = struct.unpack("Q", conn.recv(8))[0]
+            device_id = conn.recv(device_id_size).decode('utf-8')
+            print(f"📱 Device ID: {device_id}")
+            self.current_device_id = device_id
+        except Exception as e:
+            print(f"❌ Failed to receive device_id: {e}")
+            return
+        
         data = b""
         payload_size = struct.calcsize("Q")  # Changed from "L" to "Q"
         self.start_time = time.time()
