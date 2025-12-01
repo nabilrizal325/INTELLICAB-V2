@@ -295,11 +295,10 @@ class SmartCabinetPiBackend:
                 
                 # ⭐ Resize frame to reduce data (optional - adjust as needed)
                 # Smaller = faster transmission, but lower detection quality
-                frame_resized = cv2.resize(frame_bgr, (320, 240))  # Half resolution
+                  # Half resolution
                 
                 # ⭐ Encode as JPEG with lower quality for faster transmission
-                _, buffer = cv2.imencode('.jpg', frame_resized, 
-                                        [cv2.IMWRITE_JPEG_QUALITY, 60])  # Reduced quality
+                _, buffer = cv2.imencode('.jpg', frame_bgr, [cv2.IMWRITE_JPEC_QUALITY, 70])  # Reduced quality
                 data = buffer.tobytes()
                 
                 # Send to cloud server with error handling

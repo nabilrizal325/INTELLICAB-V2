@@ -23,6 +23,7 @@ class _ManualEntryFormState extends State<ManualEntryForm> {
   final TextEditingController _brandController = TextEditingController();
   final TextEditingController _expiryController = TextEditingController();
   final TextEditingController _quantityController = TextEditingController();
+  final TextEditingController _barcodeController = TextEditingController();
 
   // Initialize Cloudinary (unsigned)
   final cloudinary = CloudinaryPublic(
@@ -90,6 +91,7 @@ class _ManualEntryFormState extends State<ManualEntryForm> {
 
   void _resetForm() {
     _formKey.currentState!.reset();
+    _barcodeController.clear();
     _nameController.clear();
     _brandController.clear();
     _expiryController.clear();
@@ -134,11 +136,12 @@ class _ManualEntryFormState extends State<ManualEntryForm> {
 
       // Step 2: Prepare Firestore item
       final item = {
+        'barcode': _barcodeController.text.trim(),
         'name': _nameController.text.trim(),
         'brand': _brandController.text.trim(),
         'quantity': int.tryParse(_quantityController.text) ?? 0,
         'expiryDates': [_expiryController.text.trim()], // Store as array only
-        'cabinetId': 'unorganized',
+        'devicetId': 'unorganized',
         'isItemIn': false,
         'timeStamp': DateFormat("dd/MM/yyyy").format(DateTime.now()),
         'created_at': FieldValue.serverTimestamp(),
@@ -159,6 +162,7 @@ class _ManualEntryFormState extends State<ManualEntryForm> {
         'brand': _brandController.text.trim(),
         'created_at': FieldValue.serverTimestamp(),
         'imageUrl': imageUrl,
+        'barcode': _barcodeController.text.trim(),
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -212,6 +216,16 @@ class _ManualEntryFormState extends State<ManualEntryForm> {
             key: _formKey,
             child: Column(
               children: [
+                TextFormField(
+                  controller: _barcodeController,
+                  decoration: const InputDecoration(
+                    labelText: 'Barcode',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (v) =>
+                      v == null || v.isEmpty ? 'Please enter barcode' : null,
+                ),
+                const SizedBox(height: 16),
                 TextFormField(
                   controller: _nameController,
                   decoration: const InputDecoration(
