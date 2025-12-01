@@ -3,7 +3,6 @@
 
 import cv2
 import socket
-import pickle
 import struct
 import time
 import argparse
@@ -12,16 +11,6 @@ from ultralytics import YOLO
 from firebase_sender import FirebaseSender
 from centroid_tracker import CentroidTracker
 from direction_detector import DirectionDetector
-import time
-
-# Add timing variables
-timing_stats = {
-    'receive': [],
-    'deserialize': [],
-    'detection': [],
-    'tracking': [],
-    'display': []
-}
 
 # Brand extraction for better inventory matching
 def extract_brand(item_name):
@@ -66,26 +55,23 @@ class CloudDetectionServer:
         self.model = YOLO(model_path)
         print("✅ Model loaded successfully!")
         
-        # Initialize tracking
+        # Initialize tracking (will be per-device)
         print("\n🎯 Initializing object tracking...")
         self.tracker = CentroidTracker(maxDisappeared=30)
         self.direction_detector = DirectionDetector()
-        
-        # Load boundary
-        try:
-            self.direction_detector.load_boundary('boundary.json')
-            print("✅ Boundary loaded from boundary.json")
-        except:
-            print("⚠️  No boundary file found")
-            print("   Run calibration first to set boundary")
         
         # Initialize Firebase
         print(f"\n🔥 Connecting to Firebase...")
         try:
             self.firebase_sender = FirebaseSender(firebase_creds)
+            # Store db reference for loading boundaries
+            import firebase_admin
+            from firebase_admin import firestore
+            self.db = firestore.client()
         except Exception as e:
             print(f"⚠️  Firebase not initialized: {e}")
             self.firebase_sender = None
+            self.db = None
         
         # Stats
         self.frame_count = 0
@@ -157,6 +143,34 @@ class CloudDetectionServer:
             conn.close()
             return
         
+        # ⭐ Load boundary from Firebase for this device
+        if self.db:
+            try:
+                device_doc = self.db.collection('devices').document(device_id).get()
+                if device_doc.exists:
+                    device_data = device_doc.to_dict()
+                    boundary = device_data.get('boundary')
+                    if boundary:
+                        # Boundary format: {'x1': int, 'y1': int, 'x2': int, 'y2': int}
+                        # Convert to integers (Firebase may store as floats)
+                        points = [(int(boundary['x1']), int(boundary['y1'])), (int(boundary['x2']), int(boundary['y2']))]
+                        self.direction_detector.set_boundary(points)
+                        print(f"✅ Boundary loaded from Firebase: {points}")
+                    else:
+                        print("⚠️  No boundary set for this device - detections will be logged but not tracked")
+                else:
+                    print(f"⚠️  Device {device_id} not found in Firebase")
+            except Exception as e:
+                print(f"⚠️  Failed to load boundary: {e}")
+        
+        # ⭐ Initialize variables for frame receiving
+        data = b''
+        payload_size = struct.calcsize("Q")
+        
+        # ⭐ Initialize start_time for FPS tracking
+        if self.start_time is None:
+            self.start_time = time.time()
+        
         # ⭐ Wrap frame processing in try-except
         try:
             while True:
@@ -181,7 +195,6 @@ class CloudDetectionServer:
                 # Deserialize frame
                 # Decode JPEG
                 try:
-                    import numpy as np
                     nparr = np.frombuffer(frame_data, np.uint8)
                     frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                     
@@ -260,8 +273,9 @@ class CloudDetectionServer:
             print(f"\n🔔 EVENT #{self.total_events}: {event['label']} moved {event['direction']}{brand_info}")
             
             if self.firebase_sender:
-                # Add brand info to event
+                # Add brand info and device_id to event
                 event['detected_brand'] = detected_brand
+                event['device_id'] = self.current_device_id
                 self.firebase_sender.send_event(event)
         
         # Draw display
@@ -304,22 +318,6 @@ class CloudDetectionServer:
             print(f"   Tracking:  {track_time*1000:.1f}ms")
             print(f"   Display:   {display_time*1000:.1f}ms")
             print(f"   Total:     {(detect_time+extract_time+track_time+display_time)*1000:.1f}ms")
-        
-        def print_stats(self):
-            """Print final statistics"""
-            if self.start_time:
-                elapsed = time.time() - self.start_time
-                fps = self.frame_count / elapsed if elapsed > 0 else 0
-                
-                print(f"\n{'='*60}")
-                print("📊 SESSION STATISTICS")
-                print(f"{'='*60}")
-                print(f"Total frames processed: {self.frame_count}")
-                print(f"Total time: {elapsed:.1f} seconds")
-                print(f"Average FPS: {fps:.2f}")
-                print(f"Total events detected: {self.total_events}")
-                print(f"{'='*60}\n")
-
 
 def main():
     parser = argparse.ArgumentParser(description='Cloud Detection Server')

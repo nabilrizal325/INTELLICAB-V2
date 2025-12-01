@@ -255,17 +255,19 @@ class SmartCabinetPiBackend:
         
         # Update status
         self.db.collection('devices').document(self.device_id).update({
-            'detection_enabled': True,  # Changed from detection_running
+            'detection_enabled': True,
             'lastSeen': firestore.SERVER_TIMESTAMP
         })
         
         try:
             # Connect to cloud server
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            # ⭐ Disable Nagle's algorithm for lower latency
+            self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             self.socket.connect((self.cloud_server_ip, self.cloud_server_port))
             print(f"✅ Connected to cloud server")
             
-            # ⭐ NEW: Send device_id to server
+            # Send device_id to server
             device_id_bytes = self.device_id.encode('utf-8')
             self.socket.sendall(struct.pack("Q", len(device_id_bytes)))
             self.socket.sendall(device_id_bytes)
@@ -273,28 +275,58 @@ class SmartCabinetPiBackend:
             
             frame_count = 0
             start_time = time.time()
+            last_send_time = time.time()
+            
+            # ⭐ Target FPS for sending (reduce if network is slow)
+            target_fps = 10  # Send max 10 FPS to cloud
+            frame_interval = 1.0 / target_fps
             
             while self.running:
+                current_time = time.time()
+                
+                # ⭐ Skip frame if we're sending too fast
+                if current_time - last_send_time < frame_interval:
+                    time.sleep(0.01)  # Small sleep to avoid busy-waiting
+                    continue
+                
                 # Capture frame
                 frame = self.camera.capture_array()
                 frame_bgr = frame[:, :, :3] if frame.shape[2] == 4 else frame
                 
-                # Encode as JPEG
-                _, buffer = cv2.imencode('.jpg', frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                # ⭐ Resize frame to reduce data (optional - adjust as needed)
+                # Smaller = faster transmission, but lower detection quality
+                frame_resized = cv2.resize(frame_bgr, (320, 240))  # Half resolution
+                
+                # ⭐ Encode as JPEG with lower quality for faster transmission
+                _, buffer = cv2.imencode('.jpg', frame_resized, 
+                                        [cv2.IMWRITE_JPEG_QUALITY, 60])  # Reduced quality
                 data = buffer.tobytes()
                 
-                # Send to cloud server
+                # Send to cloud server with error handling
                 try:
+                    send_start = time.time()
                     self.socket.sendall(struct.pack("Q", len(data)) + data)
-                except:
-                    print("❌ Connection to cloud server lost")
+                    send_time = time.time() - send_start
+                    
+                    # ⭐ Warn if sending is too slow
+                    if send_time > 0.1:  # More than 100ms to send
+                        print(f"⚠️  Slow network: {send_time*1000:.0f}ms to send frame")
+                    
+                    last_send_time = current_time
+                    
+                except BrokenPipeError:
+                    print("❌ Connection to cloud server lost (broken pipe)")
+                    break
+                except Exception as e:
+                    print(f"❌ Connection error: {e}")
                     break
                 
                 # Update stats
                 frame_count += 1
                 if frame_count % 30 == 0:
-                    fps = frame_count / (time.time() - start_time)
-                    print(f"📊 Streaming to cloud: {fps:.1f} FPS")
+                    elapsed = time.time() - start_time
+                    fps = frame_count / elapsed if elapsed > 0 else 0
+                    print(f"📊 Sending to cloud: {fps:.1f} FPS (target: {target_fps} FPS)")
                     
                     # Update in Firebase
                     self.db.collection('devices').document(self.device_id).update({
@@ -382,33 +414,6 @@ class SmartCabinetPiBackend:
             
             print("👋 Backend stopped")
     
-    import threading
-
-def start_server(self):
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server_socket.bind(('0.0.0.0', self.port))
-    server_socket.listen(5)
-    
-    print(f"🚀 Cloud detection server listening on port {self.port}")
-    
-    while True:
-        try:
-            conn, addr = server_socket.accept()
-            print(f"\n📥 New connection from {addr}")
-            
-            # ⭐ Handle each connection in separate thread
-            client_thread = threading.Thread(
-                target=self.process_frames,
-                args=(conn,),
-                daemon=True
-            )
-            client_thread.start()
-            
-        except KeyboardInterrupt:
-            print("\n⏹️  Server shutting down...")
-            break
-
 
 if __name__ == '__main__':
     import argparse
