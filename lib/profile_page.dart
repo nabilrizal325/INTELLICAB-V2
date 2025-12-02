@@ -1,7 +1,11 @@
+import 'package:cloudinary_public/cloudinary_public.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
 import 'login_page.dart';
+import 'dart:io';
+
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -18,6 +22,11 @@ class _ProfilePageState extends State<ProfilePage> {
   bool _isEditing = false;
   bool _isLoading = true;
   String? _error;
+
+  String? _profilePictureUrl;
+  File? _newProfileImage;
+  final picker = ImagePicker();
+  final cloudinary = CloudinaryPublic('dqdh5szh2', 'unsigned_upload', cache: false);
 
   @override
   void initState() {
@@ -40,6 +49,7 @@ class _ProfilePageState extends State<ProfilePage> {
           _nameController.text = userData.get('name') ?? '';
           _usernameController.text = userData.get('username') ?? '';
           _emailController.text = userData.get('email') ?? '';
+          _profilePictureUrl = userData.get('profilePictureUrl');
           _isLoading = false;
         });
       }
@@ -48,6 +58,77 @@ class _ProfilePageState extends State<ProfilePage> {
         _error = 'Error loading profile: $e';
         _isLoading = false;
       });
+    }
+  }
+
+  // 🆕 Show dialog to choose camera or gallery
+Future<void> _pickProfileImage() async {
+  showModalBottomSheet(
+    context: context,
+    builder: (BuildContext context) {
+      return SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera),
+              title: const Text('Take Photo'),
+              onTap: () async {
+                Navigator.pop(context);
+                await _getImage(ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Choose from Gallery'),
+              onTap: () async {
+                Navigator.pop(context);
+                await _getImage(ImageSource.gallery);
+              },
+            ),
+            if (_profilePictureUrl != null || _newProfileImage != null)
+              ListTile(
+                leading: const Icon(Icons.delete, color: Colors.red),
+                title: const Text('Remove Photo', style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.pop(context);
+                  setState(() {
+                    _newProfileImage = null;
+                    _profilePictureUrl = null;
+                  });
+                },
+              ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+  // 🆕 Get image from camera or gallery
+  Future<void> _getImage(ImageSource source) async {
+    try {
+      final pickedFile = await picker.pickImage(source: source);
+      if (pickedFile != null) {
+        setState(() => _newProfileImage = File(pickedFile.path));
+      }
+    } catch (e) {
+      debugPrint("Image picker error: $e");
+    }
+  }
+
+  // 🆕 Upload to Cloudinary
+  Future<String?> _uploadToCloudinary(File imageFile) async {
+    try {
+      CloudinaryResponse response = await cloudinary.uploadFile(
+        CloudinaryFile.fromFile(
+          imageFile.path,
+          resourceType: CloudinaryResourceType.Image,
+        ),
+      );
+      return response.secureUrl;
+    } catch (e) {
+      debugPrint("Cloudinary upload error: $e");
+      return null;
     }
   }
 
@@ -74,17 +155,26 @@ class _ProfilePageState extends State<ProfilePage> {
         return;
       }
 
+      // 🆕 Upload new profile image if selected
+      String? imageUrl = _profilePictureUrl;
+      if (_newProfileImage != null) {
+        imageUrl = await _uploadToCloudinary(_newProfileImage!);
+      }
+
       await FirebaseFirestore.instance
           .collection('User')
           .doc(user.uid)
           .update({
         'name': _nameController.text.trim(),
         'username': _usernameController.text.trim(),
+        'profilePictureUrl': imageUrl,
       });
 
       setState(() {
         _isLoading = false;
         _error = null;
+        _profilePictureUrl = imageUrl;
+        _newProfileImage = null;
       });
 
       // Show success message
@@ -152,16 +242,62 @@ class _ProfilePageState extends State<ProfilePage> {
                     child: Column(
                       children: [
                         // Profile picture and name
-                        const CircleAvatar(
-                          radius: 50,
-                          backgroundImage: AssetImage('assets/profile.jpg'),
+                        GestureDetector(
+                          onTap: _isEditing ? _pickProfileImage : null, // Only tappable when editing
+                          child: Stack(
+                            children: [
+                              CircleAvatar(
+                                radius: 50,
+                                backgroundColor: Colors.purple.shade200,
+                                backgroundImage: _newProfileImage != null
+                                    ? FileImage(_newProfileImage!) as ImageProvider
+                                    : (_profilePictureUrl != null && _profilePictureUrl!.isNotEmpty
+                                        ? NetworkImage(_profilePictureUrl!)
+                                        : null),
+                                child: (_newProfileImage == null && 
+                                      (_profilePictureUrl == null || _profilePictureUrl!.isEmpty))
+                                    ? Text(
+                                        _usernameController.text.isNotEmpty
+                                            ? _usernameController.text[0].toUpperCase()
+                                            : 'U',
+                                        style: const TextStyle(
+                                          fontSize: 40,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : null,
+                              ),
+                              if (_isEditing)
+                                Positioned(
+                                  bottom: 0,
+                                  right: 0,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: const BoxDecoration(
+                                      color: Colors.blue,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.camera_alt,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
+
                         const SizedBox(height: 10),
                         Text(
                           _usernameController.text,
                           style: const TextStyle(
-                              fontSize: 22, fontWeight: FontWeight.bold),
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
+
                         const SizedBox(height: 20),
 
                         // User info card

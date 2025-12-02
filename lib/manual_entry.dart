@@ -156,15 +156,6 @@ class _ManualEntryFormState extends State<ManualEntryForm> {
           .collection('inventory')
           .add(item);
 
-      // Step 4: Save simplified food product
-      await FirebaseFirestore.instance.collection('food_products').add({
-        'name': _nameController.text.trim(),
-        'brand': _brandController.text.trim(),
-        'created_at': FieldValue.serverTimestamp(),
-        'imageUrl': imageUrl,
-        'barcode': _barcodeController.text.trim(),
-      });
-
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Item added successfully")),
       );
@@ -217,15 +208,16 @@ class _ManualEntryFormState extends State<ManualEntryForm> {
             child: Column(
               children: [
                 TextFormField(
-                  controller: _barcodeController,
+                  controller: _brandController,
                   decoration: const InputDecoration(
-                    labelText: 'Barcode',
+                    labelText: 'Brand',
                     border: OutlineInputBorder(),
                   ),
                   validator: (v) =>
-                      v == null || v.isEmpty ? 'Please enter barcode' : null,
+                      v == null || v.isEmpty ? 'Please enter brand' : null,
                 ),
                 const SizedBox(height: 16),
+                
                 TextFormField(
                   controller: _nameController,
                   decoration: const InputDecoration(
@@ -234,16 +226,6 @@ class _ManualEntryFormState extends State<ManualEntryForm> {
                   ),
                   validator: (v) =>
                       v == null || v.isEmpty ? 'Please enter item name' : null,
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _brandController,
-                  decoration: const InputDecoration(
-                    labelText: 'Brand',
-                    border: OutlineInputBorder(),
-                  ),
-                  validator: (v) =>
-                      v == null || v.isEmpty ? 'Please enter brand' : null,
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
