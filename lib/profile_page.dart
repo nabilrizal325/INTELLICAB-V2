@@ -377,18 +377,6 @@ Future<void> _pickProfileImage() async {
                         ),
                         const SizedBox(height: 30),
 
-                        // Buttons
-                        _buildButton(
-              context,
-              Icons.person_outline,
-              "Personalize",
-              () {
-                setState(() {
-                  _isEditing = true;
-                });
-              },
-            ),
-            const SizedBox(height: 10),
             _buildButton(
               context,
               Icons.settings_outlined,
