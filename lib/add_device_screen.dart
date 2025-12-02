@@ -33,7 +33,10 @@
 // ============================================================================
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'device_service.dart';
+import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
+
 
 /// Screen for pairing a new Raspberry Pi device to user's account
 /// 
@@ -55,6 +58,13 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
   
   /// Loading state flag (shows CircularProgressIndicator)
   bool _isLoading = false;
+
+  ///add mac address formatter
+  final _macAddressFormatter = MaskTextInputFormatter(
+    mask: '##:##:##:##:##:##',
+    filter: { "#": RegExp(r'[0-9a-fA-F]') },
+  type: MaskAutoCompletionType.lazy,
+  );
 
   /// Attempts to pair the device with entered MAC address
   /// 
@@ -118,6 +128,12 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
               const SizedBox(height: 24),
               TextFormField(
                 controller: _deviceIdController,
+                inputFormatters: [
+                  _macAddressFormatter,
+                  UpperCaseTextFormatter(),
+                  ],
+                  keyboardType: TextInputType.text,  // 🆕 Show text keyboard
+                  textCapitalization: TextCapitalization.characters,  // 🆕 Force uppercase
                 decoration: InputDecoration(
                   labelText: 'Device ID',
                   hintText: 'e.g., b8:27:eb:xx:xx:xx',
@@ -173,5 +189,20 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
   void dispose() {
     _deviceIdController.dispose();
     super.dispose();
+  }
+}
+
+// 🆕 Add this custom formatter class
+/// Converts input text to uppercase automatically
+class UpperCaseTextFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    return TextEditingValue(
+      text: newValue.text.toUpperCase(),
+      selection: newValue.selection,
+    );
   }
 }

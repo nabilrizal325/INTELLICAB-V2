@@ -31,6 +31,7 @@ class _HomePageState extends State<HomePage> {
     NotificationService().initialize();
     _loadExpiringItemsCount();
     _setupInventoryListener();
+    _setupDeviceHeartbeatMonitor();
   }
 
   void _setupInventoryListener() {
@@ -170,6 +171,52 @@ class _HomePageState extends State<HomePage> {
       debugPrint('Inventory snapshots error: $e');
     });
   }
+
+// Method to monitor device heartbeats and update status
+void _setupDeviceHeartbeatMonitor() {
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) return;
+
+  // Monitor all user's devices
+  FirebaseFirestore.instance
+      .collection('devices')
+      .where('userId', isEqualTo: user.uid)
+      .snapshots()
+      .listen((snapshot) {
+    for (var doc in snapshot.docs) {
+      final data = doc.data();
+      final deviceId = doc.id;
+      final status = data['status'] as String?;
+      final lastSeen = data['lastSeen'] as Timestamp?;
+
+      // Skip if already offline
+      if (status == 'offline') continue;
+
+      // Check if device hasn't sent heartbeat in 30 seconds
+      if (lastSeen != null) {
+        final lastSeenTime = lastSeen.toDate();
+        final secondsSinceLastSeen = 
+            DateTime.now().difference(lastSeenTime).inSeconds;
+
+        // Mark offline if no heartbeat for 30 seconds
+        if (secondsSinceLastSeen > 30) {
+          FirebaseFirestore.instance
+              .collection('devices')
+              .doc(deviceId)
+              .update({
+            'status': 'offline',
+            'detection_enabled': false,
+            'preview_enabled': false,
+          }).then((_) {
+            print('⚠️ Device $deviceId marked offline (timeout)');
+          }).catchError((e) {
+            print('❌ Error marking device offline: $e');
+          });
+        }
+      }
+    }
+  });
+}
 
   Future<void> _addLowItemToGroceryIfMissing(String userId, String inventoryDocId, String itemName) async {
     try {
