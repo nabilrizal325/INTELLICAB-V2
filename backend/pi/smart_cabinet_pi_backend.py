@@ -179,6 +179,8 @@ class SmartCabinetPiBackend:
             update_data = {
                 'calibration_image': b64,
                 'calibration_ts': firestore.SERVER_TIMESTAMP,
+                'calibration_width': 640,  # ⭐ Store actual camera resolution
+                'calibration_height': 480,
                 'lastSeen': firestore.SERVER_TIMESTAMP
             }
 

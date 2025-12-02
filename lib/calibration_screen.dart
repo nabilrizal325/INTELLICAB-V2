@@ -40,6 +40,7 @@
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'device_service.dart';
 
 /// Screen for drawing detection boundary line on calibration image
@@ -113,12 +114,45 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     setState(() => _isSaving = true);
 
     try {
+      // ⭐ Get device info to find actual camera resolution
+      final deviceDoc = await FirebaseFirestore.instance
+          .collection('devices')
+          .doc(widget.deviceId)
+          .get();
+      
+      final deviceData = deviceDoc.data();
+      final cameraWidth = (deviceData?['calibration_width'] ?? 640).toDouble();
+      final cameraHeight = (deviceData?['calibration_height'] ?? 480).toDouble();
+      
+      // Get current display size (find the image widget size)
+      // This is the size the user saw when drawing
+      final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
+      final displayWidth = renderBox?.size.width ?? cameraWidth;
+      final displayHeight = renderBox?.size.height ?? cameraHeight;
+      
+      // Calculate scale factors
+      final scaleX = cameraWidth / displayWidth;
+      final scaleY = cameraHeight / displayHeight;
+      
+      // Scale coordinates to camera resolution
+      final scaledX1 = (_startPoint!.dx * scaleX).round();
+      final scaledY1 = (_startPoint!.dy * scaleY).round();
+      final scaledX2 = (_endPoint!.dx * scaleX).round();
+      final scaledY2 = (_endPoint!.dy * scaleY).round();
+      
       final boundary = {
-        'x1': _startPoint!.dx,
-        'y1': _startPoint!.dy,
-        'x2': _endPoint!.dx,
-        'y2': _endPoint!.dy,
+        'x1': scaledX1,
+        'y1': scaledY1,
+        'x2': scaledX2,
+        'y2': scaledY2,
       };
+      
+      debugPrint('📏 Boundary Scaling Debug:');
+      debugPrint('   Display size: ${displayWidth.toInt()}x${displayHeight.toInt()}');
+      debugPrint('   Camera size: ${cameraWidth.toInt()}x${cameraHeight.toInt()}');
+      debugPrint('   Scale factors: x=${scaleX.toStringAsFixed(2)}, y=${scaleY.toStringAsFixed(2)}');
+      debugPrint('   Original: (${_startPoint!.dx.toInt()},${_startPoint!.dy.toInt()}) -> (${_endPoint!.dx.toInt()},${_endPoint!.dy.toInt()})');
+      debugPrint('   Scaled: ($scaledX1,$scaledY1) -> ($scaledX2,$scaledY2)');
 
       await _deviceService.saveBoundary(widget.deviceId, boundary);
 

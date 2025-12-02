@@ -219,7 +219,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
                   child: ListTile(
                     leading: const Icon(Icons.tune),
                     title: const Text('Reminder level'),
-                    subtitle: Text('Notify when quantity is below th$reminderLevel'),
+                    subtitle: Text('Notify when quantity is below than $reminderLevel'),
+
                     trailing: IconButton(
                       icon: const Icon(Icons.edit),
                       onPressed: () async {
@@ -227,20 +228,113 @@ class _NotificationsPageState extends State<NotificationsPage> {
                         final result = await showDialog<int>(
                           context: context,
                           builder: (context) => AlertDialog(
-                            title: const Text('Set reminder level'),
-                            content: TextField(
-                              controller: controller,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(labelText: 'Quantity threshold'),
+                            title: const Row(
+                              children: [
+                                
+                                Text('Set Reminder Level'),
+                              ],
+                            ),
+                            content: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // 🆕 Explanation text
+                                const Text(
+                                  'Notify me when my item quantity is below:',
+                                  style: TextStyle(fontSize: 14, color: Colors.grey),
+                                ),
+                                const SizedBox(height: 16),
+                                
+                                // 🆕 Improved TextField with validation
+                                TextField(
+                                  controller: controller,
+                                  keyboardType: TextInputType.number,
+                                  autofocus: true,
+                                  decoration: InputDecoration(
+                                    labelText: 'Reminder Threshold',
+                                    hintText: 'e.g., 5',
+                                    prefixIcon: const Icon(Icons.inventory_2_outlined),
+                                    suffixText: 'items',
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    filled: true,
+                                    fillColor: Colors.grey.shade50,
+                                    helperText: 'Recommended: 1-10',
+                                    helperStyle: const TextStyle(fontSize: 12),
+                                  ),
+                                ),
+                                
+                                // 🆕 Quick selection chips
+                                const SizedBox(height: 16),
+                                const Text(
+                                  'Quick select:',
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                ),
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 8,
+                                  children: [1, 3, 5, 10].map((value) {
+                                    return ChoiceChip(
+                                      label: Text(value.toString()),
+                                      selected: controller.text == value.toString(),
+                                      onSelected: (selected) {
+                                        if (selected) {
+                                          controller.text = value.toString();
+                                          // Trigger rebuild to update selected chip
+                                          (context as Element).markNeedsBuild();
+                                        }
+                                      },
+                                      selectedColor: Colors.purple.shade200,
+                                    );
+                                  }).toList(),
+                                ),
+                              ],
                             ),
                             actions: [
-                              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
                               TextButton(
+                                onPressed: () => Navigator.pop(context),
+                                child: const Text('Cancel'),
+                              ),
+                              FilledButton.icon(
                                 onPressed: () {
-                                  final value = int.tryParse(controller.text) ?? reminderLevel;
+                                  final input = controller.text.trim();
+                                  
+                                  // 🆕 Validate input
+                                  if (input.isEmpty) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Please enter a value')),
+                                    );
+                                    return;
+                                  }
+                                  
+                                  final value = int.tryParse(input);
+                                  
+                                  if (value == null) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Please enter a valid number')),
+                                    );
+                                    return;
+                                  }
+                                  
+                                  if (value < 1) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Value must be at least 1')),
+                                    );
+                                    return;
+                                  }
+                                  
+                                  if (value > 100) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Value cannot exceed 100')),
+                                    );
+                                    return;
+                                  }
+                                  
                                   Navigator.pop(context, value);
                                 },
-                                child: const Text('Save'),
+                                icon: const Icon(Icons.check),
+                                label: const Text('Save'),
                               ),
                             ],
                           ),
@@ -249,6 +343,17 @@ class _NotificationsPageState extends State<NotificationsPage> {
                         if (result != null) {
                           await _saveReminderLevel(result);
                           setState(() {});
+                          
+                          // 🆕 Show success feedback
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Reminder level updated to $result'),
+                                backgroundColor: Colors.green,
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          }
                         }
                       },
                     ),

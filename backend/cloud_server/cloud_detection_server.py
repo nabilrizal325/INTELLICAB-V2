@@ -151,11 +151,26 @@ class CloudDetectionServer:
                     device_data = device_doc.to_dict()
                     boundary = device_data.get('boundary')
                     if boundary:
-                        # Boundary format: {'x1': int, 'y1': int, 'x2': int, 'y2': int}
-                        # Convert to integers (Firebase may store as floats)
-                        points = [(int(boundary['x1']), int(boundary['y1'])), (int(boundary['x2']), int(boundary['y2']))]
-                        self.direction_detector.set_boundary(points)
-                        print(f"✅ Boundary loaded from Firebase: {points}")
+                        # Store original boundary for scaling
+                        self.boundary_original = {
+                            'x1': int(boundary['x1']),
+                            'y1': int(boundary['y1']),
+                            'x2': int(boundary['x2']),
+                            'y2': int(boundary['y2'])
+                        }
+                        
+                        # Get calibration resolution
+                        self.calibration_width = device_data.get('calibration_width', 640)
+                        self.calibration_height = device_data.get('calibration_height', 480)
+                        
+                        print(f"\n📏 BOUNDARY INFO:")
+                        print(f"   Boundary coordinates: ({self.boundary_original['x1']},{self.boundary_original['y1']}) -> ({self.boundary_original['x2']},{self.boundary_original['y2']})")
+                        print(f"   Calibration resolution: {self.calibration_width}x{self.calibration_height}")
+                        print(f"   Will auto-scale to match incoming frames\n")
+                        
+                        # Don't set boundary yet - will scale on first frame
+                        self.boundary_scaled = False
+                        
                     else:
                         print("⚠️  No boundary set for this device - detections will be logged but not tracked")
                 else:
@@ -200,8 +215,14 @@ class CloudDetectionServer:
                     
                     if frame is None:
                         raise ValueError("Failed to decode JPEG frame")
-                        
-                    print(f"✅ Frame decoded! Shape: {frame.shape}")
+                    
+                    # 🔍 DEBUG: Print frame dimensions (only every 30 frames to avoid spam)
+                    if self.frame_count % 30 == 0:
+                        print(f"\n📐 FRAME DEBUG INFO:")
+                        print(f"   Frame shape: {frame.shape}")
+                        print(f"   Height: {frame.shape[0]} pixels")
+                        print(f"   Width: {frame.shape[1]} pixels")
+                        print(f"   Channels: {frame.shape[2]}\n")
                 except Exception as e:
                     print(f"❌ Decode error: {e}")
                     print(f"   Received {len(frame_data)} bytes")
@@ -224,6 +245,37 @@ class CloudDetectionServer:
     
     def process_single_frame(self, frame):
         """Process a single frame - run detection and tracking"""
+        
+        # ⭐ Auto-scale boundary on first frame
+        if hasattr(self, 'boundary_original') and not getattr(self, 'boundary_scaled', False):
+            frame_height, frame_width = frame.shape[:2]
+            
+            # Calculate scale factors
+            scale_x = frame_width / self.calibration_width
+            scale_y = frame_height / self.calibration_height
+            
+            # Scale boundary points
+            scaled_x1 = int(self.boundary_original['x1'] * scale_x)
+            scaled_y1 = int(self.boundary_original['y1'] * scale_y)
+            scaled_x2 = int(self.boundary_original['x2'] * scale_x)
+            scaled_y2 = int(self.boundary_original['y2'] * scale_y)
+            
+            # Clamp to frame bounds
+            scaled_x1 = max(0, min(scaled_x1, frame_width - 1))
+            scaled_x2 = max(0, min(scaled_x2, frame_width - 1))
+            scaled_y1 = max(0, min(scaled_y1, frame_height - 1))
+            scaled_y2 = max(0, min(scaled_y2, frame_height - 1))
+            
+            scaled_points = [(scaled_x1, scaled_y1), (scaled_x2, scaled_y2)]
+            self.direction_detector.set_boundary(scaled_points)
+            self.boundary_scaled = True
+            
+            print(f"\n✅ BOUNDARY AUTO-SCALED:")
+            print(f"   Calibration resolution: {self.calibration_width}x{self.calibration_height}")
+            print(f"   Actual frame resolution: {frame_width}x{frame_height}")
+            print(f"   Scale factors: x={scale_x:.3f}, y={scale_y:.3f}")
+            print(f"   Original boundary: ({self.boundary_original['x1']},{self.boundary_original['y1']}) -> ({self.boundary_original['x2']},{self.boundary_original['y2']})")
+            print(f"   Scaled boundary:   ({scaled_x1},{scaled_y1}) -> ({scaled_x2},{scaled_y2})\n")
         
         frame_start = time.time()
         
@@ -281,7 +333,21 @@ class CloudDetectionServer:
         # Draw display
         display_start = time.time()
         if self.show_display:
+            # Draw boundary line
             self.direction_detector.draw_boundary(frame)
+            
+            # 🔍 DEBUG: Draw boundary endpoints as circles and add info text
+            if hasattr(self.direction_detector, 'boundary') and self.direction_detector.boundary:
+                p1, p2 = self.direction_detector.boundary
+                # Draw large circles at boundary endpoints
+                cv2.circle(frame, p1, 10, (0, 0, 255), -1)  # Red circle at start point
+                cv2.circle(frame, p2, 10, (255, 0, 0), -1)  # Blue circle at end point
+                
+                # Add text labels
+                cv2.putText(frame, "START", (p1[0] + 15, p1[1]), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                cv2.putText(frame, "END", (p2[0] + 15, p2[1]), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
             
             for obj_id, obj_data in objects.items():
                 centroid = obj_data['centroid']
@@ -291,6 +357,7 @@ class CloudDetectionServer:
                         (centroid[0]-10, centroid[1]-10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
             
+            # Display stats
             elapsed = time.time() - self.start_time
             fps = self.frame_count / elapsed if elapsed > 0 else 0
             cv2.putText(frame, f"FPS: {fps:.1f}", (10, 30),
@@ -298,6 +365,16 @@ class CloudDetectionServer:
             
             cv2.putText(frame, f"Events: {self.total_events}", (10, 70),
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+            
+            # 🔍 DEBUG: Display frame dimensions and boundary coordinates
+            h, w = frame.shape[:2]
+            cv2.putText(frame, f"Frame: {w}x{h}", (10, 110),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+            
+            if hasattr(self.direction_detector, 'boundary') and self.direction_detector.boundary:
+                p1, p2 = self.direction_detector.boundary
+                cv2.putText(frame, f"Boundary: ({p1[0]},{p1[1]}) -> ({p2[0]},{p2[1]})", 
+                           (10, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
             
             cv2.imshow('Cloud Detection Server', frame)
             if cv2.waitKey(1) == ord('q'):
