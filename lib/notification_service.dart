@@ -53,7 +53,7 @@ class NotificationService {
     required String itemName,
     required int daysUntilExpiry,
   }) async {
-    final notificationKey = 'expiry_${itemName}';
+    final notificationKey = 'expiry_$itemName}';
     
     // Only show if not already shown
     if (_shownNotifications.contains(notificationKey)) {

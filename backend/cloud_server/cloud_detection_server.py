@@ -7,6 +7,7 @@ import struct
 import time
 import argparse
 import numpy as np
+import torch
 from ultralytics import YOLO
 from firebase_sender import FirebaseSender
 from centroid_tracker import CentroidTracker
@@ -50,10 +51,46 @@ class CloudDetectionServer:
         print("🌩️  CLOUD DETECTION SERVER")
         print("="*60)
         
+        # ⭐ GPU Detection and Configuration
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        
+        print(f"\n{'='*60}")
+        print(f"🎮 GPU CONFIGURATION")
+        print(f"{'='*60}")
+        
+        if torch.cuda.is_available():
+            gpu_name = torch.cuda.get_device_name(0)
+            gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
+            
+            print(f"✅ GPU Detected: {gpu_name}")
+            print(f"   VRAM: {gpu_memory:.1f} GB")
+            print(f"   CUDA Version: {torch.version.cuda}")
+            print(f"   PyTorch Version: {torch.__version__}")
+            
+            # ⭐ RTX 3050 specific optimizations
+            if '3050' in gpu_name or 'RTX' in gpu_name:
+                print(f"   🚀 NVIDIA RTX GPU detected - applying optimizations")
+                torch.backends.cudnn.benchmark = True  # Auto-tune for best performance
+                print(f"   ✅ CuDNN benchmark mode enabled")
+        else:
+            print(f"⚠️  NO GPU DETECTED - Using CPU (slower)")
+        
+        print(f"{'='*60}\n")
+        
         # Load YOLO model
-        print(f"\n📦 Loading YOLO model: {model_path}")
+        print(f"📦 Loading YOLO model: {model_path}")
         self.model = YOLO(model_path)
-        print("✅ Model loaded successfully!")
+        self.model.to(self.device)  # ⭐ Move model to GPU
+        print(f"✅ Model loaded on {self.device.upper()}!")
+        
+        # ⭐ GPU Warm-up
+        if self.device == 'cuda':
+            print(f"🔥 Warming up GPU...")
+            dummy_frame = np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
+            for _ in range(10):
+                _ = self.model(dummy_frame, device=self.device, half=True, verbose=False)
+            torch.cuda.synchronize()
+            print(f"✅ GPU warmed up and ready!\n")
         
         # Initialize tracking (will be per-device)
         print("\n🎯 Initializing object tracking...")
@@ -279,9 +316,19 @@ class CloudDetectionServer:
         
         frame_start = time.time()
         
-        # Run YOLO detection
+        # ⭐ GPU-Accelerated YOLO Detection (Optimized for RTX 3050)
         detect_start = time.time()
-        results = self.model(frame, verbose=False)
+        results = self.model(
+            frame,
+            imgsz=416,              # Optimal size for RTX 3050 (faster)
+            conf=0.25,              # Lower confidence threshold (faster)
+            iou=0.45,               # Lower IOU threshold (faster)
+            half=True,              # ⭐ FP16 half-precision (2x faster on GPU)
+            device=self.device,     # ⭐ Use GPU
+            verbose=False,
+            agnostic_nms=False,     # Class-specific NMS (faster)
+            max_det=100,            # Max 100 detections per frame
+        )
         detect_time = time.time() - detect_start
         
         # Extract detections

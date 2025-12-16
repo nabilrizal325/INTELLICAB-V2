@@ -30,8 +30,16 @@ class _CabinetDetailsPageState extends State<CabinetDetailsPage> {
   @override
   void initState() {
     super.initState();
+    
+    // 🔍 DEBUG: Log what device we're viewing
+    debugPrint('\n📱 OPENING CABINET DETAILS:');
+    debugPrint('   Title: "${widget.title}"');
+    debugPrint('   Device ID: "${widget.deviceId}"');
+    debugPrint('   Is Unorganized: ${widget.isUnorganized}');
+    
     _initDetectionListener();
     _migrateExpiryDateFormat(); // One-time migration to clean up data
+    _migrateLabelField(); // Add label field from food_products
   }
 
   /// Migrate all items from expiryDate to expiryDates array format
@@ -66,6 +74,56 @@ class _CabinetDetailsPageState extends State<CabinetDetailsPage> {
       }
     } catch (e) {
       debugPrint('❌ Migration error: $e');
+    }
+  }
+
+  /// Add label field to inventory items by fetching from food_products
+  Future<void> _migrateLabelField() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final snapshot = await _getInventoryCollection().get();
+      int migratedCount = 0;
+
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        final hasLabel = data['label'] != null && data['label'].toString().isNotEmpty;
+        final barcode = data['barcode'] as String?;
+
+        // If no label but has barcode, fetch from food_products
+        if (!hasLabel && barcode != null && barcode.isNotEmpty) {
+          try {
+            final foodProductQuery = await FirebaseFirestore.instance
+                .collection('food_products')
+                .where('barcode', isEqualTo: barcode)
+                .limit(1)
+                .get();
+
+            if (foodProductQuery.docs.isNotEmpty) {
+              final foodProduct = foodProductQuery.docs.first.data();
+              final label = foodProduct['label'] as String?;
+
+              if (label != null && label.isNotEmpty) {
+                debugPrint('🔄 Adding label to ${data['brand']} ${data['name']}: "$label"');
+                
+                await _getInventoryCollection().doc(doc.id).update({
+                  'label': label,
+                });
+                migratedCount++;
+              }
+            }
+          } catch (e) {
+            debugPrint('⚠️ Failed to fetch label for barcode $barcode: $e');
+          }
+        }
+      }
+
+      if (migratedCount > 0) {
+        debugPrint('✅ Label migration complete: $migratedCount items updated with labels');
+      }
+    } catch (e) {
+      debugPrint('❌ Label migration error: $e');
     }
   }
 
@@ -317,9 +375,8 @@ class _CabinetDetailsPageState extends State<CabinetDetailsPage> {
         .collection('inventory');
   }
 
-  Future<void> _editItem(Map<String, dynamic> item, int index) async {
-    final id = item['id']?.toString();
-    if (id == null || id.isEmpty) return;
+  Future<void> _editItem(String itemId, Map<String, dynamic> item, int index) async {
+    if (itemId.isEmpty) return;
 
     final brandController = TextEditingController(text: item['brand'] ?? '');
     final nameController = TextEditingController(text: item['name'] ?? '');
@@ -376,11 +433,27 @@ class _CabinetDetailsPageState extends State<CabinetDetailsPage> {
                   keyboardType: TextInputType.number,
                 ),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: expiryController,
-                  decoration: const InputDecoration(
-                    labelText: 'Expiry Date (dd/MM/yyyy)',
-                    border: OutlineInputBorder(),
+                GestureDetector(
+                  onTap: () async {
+                    DateTime? picked = await showDatePicker(
+                      context: context,
+                      initialDate: DateTime.now(),
+                      firstDate: DateTime.now(),
+                      lastDate: DateTime(2100),
+                    );
+                    if (picked != null) {
+                      expiryController.text = DateFormat('dd/MM/yyyy').format(picked);
+                    }
+                  },
+                  child: AbsorbPointer(
+                    child: TextField(
+                      controller: expiryController,
+                      decoration: const InputDecoration(
+                        labelText: 'Expiry Date',
+                        border: OutlineInputBorder(),
+                        suffixIcon: Icon(Icons.calendar_today),
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -461,7 +534,7 @@ class _CabinetDetailsPageState extends State<CabinetDetailsPage> {
           debugPrint('✅ Updating expiryDates to: [$newExpiry]');
         }
 
-        await _getInventoryCollection().doc(id).update({
+        await _getInventoryCollection().doc(itemId).update({
           ...updateData,
           'expiryDate': FieldValue.delete(),
         });
@@ -627,6 +700,18 @@ class _CabinetDetailsPageState extends State<CabinetDetailsPage> {
 
                 var allItems = snapshot.data?.docs ?? [];
                 
+                // 🔍 DEBUG: Log query results
+                debugPrint('\n📊 CABINET DETAILS DEBUG:');
+                debugPrint('   Page type: ${widget.isUnorganized ? "Unorganized" : "Device"}');
+                debugPrint('   Device ID filter: "${widget.deviceId}"');
+                debugPrint('   Total items from query: ${allItems.length}');
+                if (allItems.isNotEmpty) {
+                  for (var doc in allItems) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    debugPrint('   📦 Item: ${data['name']} | deviceId="${data['deviceId']}" | cabinetId="${data['cabinetId']}"');
+                  }
+                }
+                
                 // Filter items based on type
                 List<QueryDocumentSnapshot> items;
                 if (widget.isUnorganized) {
@@ -693,6 +778,13 @@ class _CabinetDetailsPageState extends State<CabinetDetailsPage> {
                     final itemId = doc.id;
                     final status = _itemStatus[itemId] ?? 'unknown';
 
+                    // Debug: Print item data to check imageUrl
+                    if (index == 0) {
+                      debugPrint('🖼️ Item data: ${item.toString()}');
+                      debugPrint('🖼️ imageUrl value: ${item['imageUrl']}');
+                      debugPrint('🖼️ imageUrl is null: ${item['imageUrl'] == null}');
+                    }
+
                     Color statusColor;
                     String statusText;
                     if (status == 'in') {
@@ -723,19 +815,32 @@ class _CabinetDetailsPageState extends State<CabinetDetailsPage> {
                           borderRadius: BorderRadius.circular(8),
                           color: Colors.white,
                         ),
-                        child: item['imageUrl'] != null
+                        child: item['imageUrl'] != null && item['imageUrl'].toString().isNotEmpty
                             ? ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
                                 child: Image.network(
-                                  item['imageUrl']!,
+                                  item['imageUrl'].toString(),
                                   fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) =>
-                                      const Icon(Icons.image_not_supported,
-                                          color: Colors.grey),
+                                  loadingBuilder: (context, child, loadingProgress) {
+                                    if (loadingProgress == null) return child;
+                                    return Center(
+                                      child: CircularProgressIndicator(
+                                        value: loadingProgress.expectedTotalBytes != null
+                                            ? loadingProgress.cumulativeBytesLoaded /
+                                                loadingProgress.expectedTotalBytes!
+                                            : null,
+                                      ),
+                                    );
+                                  },
+                                  errorBuilder: (context, error, stackTrace) {
+                                    debugPrint('🖼️ Image load error: $error');
+                                    return const Icon(Icons.image_not_supported,
+                                        color: Colors.grey);
+                                  },
                                 ),
                               )
-                            : const Icon(Icons.image_not_supported,
-                                color: Colors.grey),
+                            : const Icon(Icons.inventory_2_outlined,
+                                color: Colors.grey, size: 30),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -801,7 +906,7 @@ class _CabinetDetailsPageState extends State<CabinetDetailsPage> {
                               IconButton(
                                 icon: const Icon(Icons.edit_outlined,
                                     color: Colors.black, size: 20),
-                                onPressed: () => _editItem(item, index),
+                                onPressed: () => _editItem(itemId, item, index),
                               ),
                               IconButton(
                                 icon: const Icon(Icons.delete,

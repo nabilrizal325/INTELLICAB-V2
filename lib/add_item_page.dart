@@ -145,6 +145,18 @@ void _onBarcodeDetected(mobile.BarcodeCapture capture) async {
       final globalData = query.docs.first.data();
       final brand = globalData['brand'];
       final name = globalData['name'];
+      final label = globalData['label'] as String?; // YOLO class name for detection matching
+      final imageUrl = globalData['imageUrl'] as String?; // Product image URL
+
+      // 🔍 DEBUG: Check what we got from food_products
+      debugPrint('📦 Food Product Data:');
+      debugPrint('   Brand: $brand');
+      debugPrint('   Name: $name');
+      debugPrint('   Label: $label');
+      debugPrint('   ImageURL: $imageUrl');
+      debugPrint('   ImageURL is null: ${imageUrl == null}');
+      debugPrint('   ImageURL is empty: ${imageUrl?.isEmpty ?? true}');
+      debugPrint('   Full globalData: ${globalData.toString()}');
 
       // Step 3: Ask user for expiry date
       final expiryDate = await _askForExpiryDate();
@@ -162,6 +174,8 @@ void _onBarcodeDetected(mobile.BarcodeCapture capture) async {
       if (userDoc.exists) {
         // If item already exists → increment quantity and update expiry date
         await userInvRef.update({
+          'label': label, // Update label in case it changed in food_products
+          'imageUrl': imageUrl, // Update image in case it changed in food_products
           'quantity': FieldValue.increment(1),
           'expiryDates': [expiryDate], // Store as array only
           'lastUpdated': FieldValue.serverTimestamp(),
@@ -172,6 +186,8 @@ void _onBarcodeDetected(mobile.BarcodeCapture capture) async {
           'barcode': barcode,
           'brand': brand,
           'name': name,
+          'label': label, // YOLO label for camera detection matching
+          'imageUrl': imageUrl, // Product image from food_products
           'quantity': 1,
           'expiryDates': [expiryDate], // Store as array only
           'cabinetName': 'unorganized',
@@ -190,63 +206,25 @@ void _onBarcodeDetected(mobile.BarcodeCapture capture) async {
     }
   }
 
-  /// 🔹 Popup for expiry date input
+  /// 🔹 Popup for expiry date input using calendar picker
   Future<String?> _askForExpiryDate() async {
-    final controller = TextEditingController();
-    final result = await showDialog<String>(
+    final picked = await showDatePicker(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Enter Expiry Date'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Format: dd-mm-yyyy\nExample: 25-12-2025',
-              style: TextStyle(fontSize: 14, color: Colors.grey),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: controller,
-              decoration: const InputDecoration(
-                hintText: 'dd-mm-yyyy',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+      initialDate: DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime(2100),
+      helpText: 'Select Expiry Date',
+      cancelText: 'Cancel',
+      confirmText: 'Save',
     );
 
-    if (result != null) {
-      try {
-        // Validate the date format (dd-mm-yyyy)
-        final parts = result.split('-');
-        if (parts.length != 3) throw FormatException('Invalid date format');
-        
-        final day = int.parse(parts[0]);
-        final month = int.parse(parts[1]);
-        final year = int.parse(parts[2]);
-        
-        // Basic date validation
-        if (day < 1 || day > 31 || month < 1 || month > 12 || year < 2023) {
-          throw FormatException('Invalid date values');
-        }
-        
-        return result; // Return the original string input
-      } catch (e) {
-        _showErrorDialog('Invalid date format. Please use dd-mm-yyyy');
-        return null;
-      }
+    if (picked != null) {
+      // Format date as dd-mm-yyyy
+      final day = picked.day.toString().padLeft(2, '0');
+      final month = picked.month.toString().padLeft(2, '0');
+      final year = picked.year.toString();
+      
+      return '$day-$month-$year';
     }
     return null;
   }
