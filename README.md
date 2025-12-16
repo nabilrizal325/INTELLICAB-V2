@@ -127,8 +127,8 @@ This project is developed as part of a final year project.
 
 ## 👥 Contributors
 
-- **Developer**: [Your Name]
-- **Institution**: [Your University]
+- **Developer**: Nabil, Arissa, Hakim, Haziq
+- **Institution**: German-Malaysian Institute
 - **Year**: 2025
 
 ---
