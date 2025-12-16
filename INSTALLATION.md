@@ -185,11 +185,36 @@ service firebase.storage {
 2. Click **"Generate new private key"**
 3. Click **"Generate key"** (downloads JSON file)
 4. Rename file to `firebase-credentials.json`
-5. **IMPORTANT**: Keep this file secure, never commit to Git
+5. **CRITICAL SECURITY**: This file contains sensitive credentials
+   - ⚠️ **NEVER commit to Git**
+   - ⚠️ **Already included in .gitignore**
+   - ⚠️ Keep secure and private
 
-**Copy credentials to:**
-- Cloud server: `backend/cloud_server/firebase-credentials.json`
-- Raspberry Pi: `backend/pi/firebase-credentials.json`
+**Setup credentials:**
+
+**Cloud Server:**
+```bash
+# Copy your downloaded credentials file
+cp ~/Downloads/your-firebase-key.json backend/cloud_server/firebase-credentials.json
+
+# Or use the template as a guide
+cp backend/cloud_server/firebase-credentials.json.template backend/cloud_server/firebase-credentials.json
+# Then edit with your actual credentials
+```
+
+**Raspberry Pi:**
+```bash
+# Copy your downloaded credentials file
+cp ~/Downloads/your-firebase-key.json backend/pi/firebase-credentials.json
+
+# Or use the template as a guide
+cp backend/pi/firebase-credentials.json.template backend/pi/firebase-credentials.json
+# Then edit with your actual credentials
+```
+
+**Template files are provided at:**
+- `backend/cloud_server/firebase-credentials.json.template`
+- `backend/pi/firebase-credentials.json.template`
 
 ### 8. Get Firebase Config for Mobile App
 

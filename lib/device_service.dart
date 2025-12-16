@@ -333,30 +333,6 @@ class DeviceService {
         .collection('inventory')
         .get();
 
-    print('\n🔍 DETECTION MATCHING DEBUG:');
-    print('   Detection ID: $detectionId');
-    print('   Device ID: $deviceId');
-    print('   Device Name: $deviceName');
-    print('   Detected Item (YOLO): "$finalItemName"');
-    print('   Detected Brand: "$detectedBrand"');
-    print('   Direction: $direction');
-    print('   Total inventory items: ${allInventoryItems.docs.length}');
-    
-    // Check if item with this exact label exists
-    final detectedLabelNormalized = finalItemName.toLowerCase().replaceAll('_', ' ');
-    print('   🔎 Normalized detected label: "$detectedLabelNormalized"');
-    
-    final exactLabelMatch = allInventoryItems.docs.where((doc) {
-      final label = (doc.data()['label'] as String?)?.toLowerCase() ?? '';
-      return label == detectedLabelNormalized;
-    }).toList();
-    print('   📌 Items with exact label match: ${exactLabelMatch.length}');
-    if (exactLabelMatch.isNotEmpty) {
-      for (var doc in exactLabelMatch) {
-        final data = doc.data();
-        print('      ✓ Found: ${data['name']} (deviceId: ${data['deviceId']})');}
-    }
-
     // Try to find matching item using multiple strategies
     QueryDocumentSnapshot? matchedItem;
     double bestMatchScore = 0.0;
@@ -365,28 +341,20 @@ class DeviceService {
       final itemData = doc.data();
       final inventoryName = (itemData['name'] as String?)?.toLowerCase() ?? '';
       final inventoryBrand = (itemData['brand'] as String?)?.toLowerCase() ?? '';
-      final inventoryLabel = (itemData['label'] as String?)?.toLowerCase() ?? ''; // YOLO label from food_products
-      final currentDeviceId = itemData['deviceId'] as String? ?? 'unorganized';
       
-      // Calculate match score using label field (primary) and name (fallback)
+      // Calculate match score
       double score = _calculateMatchScore(
         detectedName: finalItemName.toLowerCase(),
         detectedBrand: detectedBrand?.toLowerCase(),
         inventoryName: inventoryName,
         inventoryBrand: inventoryBrand,
-        inventoryLabel: inventoryLabel, // Use label for matching
       );
-
-      print('   📦 Checking: "$inventoryName" (label: "$inventoryLabel", deviceId: "$currentDeviceId") → Score: ${(score * 100).toStringAsFixed(0)}%');
 
       if (score > bestMatchScore) {
         bestMatchScore = score;
         matchedItem = doc;
       }
     }
-
-    print('   🎯 Best match score: ${(bestMatchScore * 100).toStringAsFixed(0)}%');
-    print('   🎯 Match threshold: 60%');
 
     // Require at least 60% match confidence
     if (matchedItem != null && bestMatchScore >= 0.6) {
@@ -396,42 +364,30 @@ class DeviceService {
       final inventoryItemName = itemData['name'] as String;
 
       print('🎯 Matched detected "$finalItemName" with inventory "$inventoryItemName" (${(bestMatchScore * 100).toStringAsFixed(0)}% confidence)');
-      print('   📊 Current state: deviceId="$currentDeviceId", quantity=$currentQuantity, direction=$direction');
-
-      // Calculate new quantity based on direction
-      int newQuantity;
-      if (direction.toLowerCase() == 'in') {
-        newQuantity = currentQuantity + 1;
-      } else {
-        newQuantity = (currentQuantity - 1).clamp(0, 999);
-      }
-      
-      print('   📊 Calculated new quantity: $currentQuantity → $newQuantity');
 
       // If item is in unorganized and detection is 'in', move it to this device
-      if ((currentDeviceId == 'unorganized' || currentDeviceId == null || currentDeviceId.isEmpty) && direction.toLowerCase() == 'in') {
+      if (currentDeviceId == 'unorganized' && direction == 'in') {
         await matchedItem.reference.update({
           'deviceId': deviceId,
           'deviceName': deviceName,
-          'cabinetId': deviceId,  // Update legacy field too
-          'cabinetName': deviceName,  // Update legacy field too
-          'location': 'in',  // Mark as inside cabinet
-          'quantity': newQuantity,
+          'quantity': currentQuantity + 1,
           'last_updated': FieldValue.serverTimestamp(),
         });
         print('✅ Moved $inventoryItemName from unorganized to $deviceName');
-        print('   📍 Set deviceId: "$deviceId"');
-        print('   📍 Set cabinetName: "$deviceName"');
-        print('   📍 Set quantity: $newQuantity');
-        print('   📍 Document path: User/{uid}/inventory/${matchedItem.id}');
       } else {
-        // Item already in a device, just update quantity
+        // Normal quantity update
+        int newQuantity;
+        if (direction == 'in') {
+          newQuantity = currentQuantity + 1;
+        } else {
+          newQuantity = (currentQuantity - 1).clamp(0, 999);
+        }
+
         await matchedItem.reference.update({
           'quantity': newQuantity,
           'last_updated': FieldValue.serverTimestamp(),
         });
         print('✅ Updated inventory: $inventoryItemName ($currentQuantity → $newQuantity)');
-        print('   📍 Item already at deviceId: "$currentDeviceId"');
       }
 
       // Mark detection as processed with match info
@@ -489,10 +445,8 @@ class DeviceService {
   /// Calculates match score between detected item and inventory item
   /// 
   /// SCORING SYSTEM:
-  /// - Exact label match: 1.0 (PRIORITY - YOLO label matches inventory label)
-  /// - Exact name match: 1.0 (fallback for items without labels)
+  /// - Exact name match: 1.0
   /// - Brand exact match: +0.4
-  /// - Label contains detected words: 0.9
   /// - Name contains detected words: 0.7
   /// - Detected name contains inventory name: 0.6
   /// - Word overlap: 0.3-0.8 based on percentage
@@ -503,26 +457,19 @@ class DeviceService {
     String? detectedBrand,
     required String inventoryName,
     required String inventoryBrand,
-    String? inventoryLabel, // YOLO label from food_products
   }) {
     double score = 0.0;
 
     // Clean and normalize strings
     final cleanDetected = detectedName.replaceAll('_', ' ').trim();
     final cleanInventory = inventoryName.trim();
-    final cleanLabel = (inventoryLabel ?? '').replaceAll('_', ' ').trim();
 
-    // 1. EXACT LABEL MATCH (HIGHEST PRIORITY - for camera-detected items)
-    if (cleanLabel.isNotEmpty && cleanDetected == cleanLabel) {
-      return 1.0;
-    }
-
-    // 2. EXACT NAME MATCH (fallback for manual entries without label)
+    // 1. EXACT MATCH (best case)
     if (cleanDetected == cleanInventory) {
       return 1.0;
     }
 
-    // 3. BRAND MATCH (very strong signal)
+    // 2. BRAND MATCH (very strong signal)
     if (detectedBrand != null && 
         detectedBrand.isNotEmpty && 
         inventoryBrand.isNotEmpty) {
@@ -532,48 +479,26 @@ class DeviceService {
       }
     }
 
-    // 4. LABEL SUBSTRING MATCH (high priority for camera items)
-    if (cleanLabel.isNotEmpty) {
-      if (cleanLabel.contains(cleanDetected)) {
-        score += 0.9;
-      } else if (cleanDetected.contains(cleanLabel)) {
-        score += 0.85;
-      }
-    }
-
-    // 5. NAME SUBSTRING MATCH (fallback)
+    // 3. SUBSTRING MATCH (one contains the other)
     if (cleanInventory.contains(cleanDetected)) {
       score += 0.7;
     } else if (cleanDetected.contains(cleanInventory)) {
       score += 0.6;
     }
 
-    // 6. WORD OVERLAP (check label first, then name)
+    // 4. WORD OVERLAP (count matching words)
     final detectedWords = cleanDetected.split(' ').toSet();
+    final inventoryWords = cleanInventory.split(' ').toSet();
     
-    // Try label matching first
-    if (cleanLabel.isNotEmpty) {
-      final labelWords = cleanLabel.split(' ').toSet();
-      final commonWords = detectedWords.intersection(labelWords);
-      final totalWords = detectedWords.union(labelWords);
-      
-      if (totalWords.isNotEmpty) {
-        final wordOverlapScore = commonWords.length / totalWords.length;
-        score += wordOverlapScore * 0.6; // Higher weight for label matching
-      }
-    } else {
-      // Fallback to name matching for items without labels
-      final inventoryWords = cleanInventory.split(' ').toSet();
-      final commonWords = detectedWords.intersection(inventoryWords);
-      final totalWords = detectedWords.union(inventoryWords);
-      
-      if (totalWords.isNotEmpty) {
-        final wordOverlapScore = commonWords.length / totalWords.length;
-        score += wordOverlapScore * 0.5;
-      }
+    final commonWords = detectedWords.intersection(inventoryWords);
+    final totalWords = detectedWords.union(inventoryWords);
+    
+    if (totalWords.isNotEmpty) {
+      final wordOverlapScore = commonWords.length / totalWords.length;
+      score += wordOverlapScore * 0.5;
     }
 
-    // 7. BRAND IN NAME (brand mentioned in product name)
+    // 5. BRAND IN NAME (brand mentioned in product name)
     if (inventoryBrand.isNotEmpty && 
         cleanDetected.contains(inventoryBrand)) {
       score += 0.3;

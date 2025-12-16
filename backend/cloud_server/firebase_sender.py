@@ -46,8 +46,7 @@ class FirebaseSender:
                 'timestamp': firestore.SERVER_TIMESTAMP,
                 'timestamp_local': event['timestamp'],
                 'object_id': event['object_id'],
-                'processed': False,  # For automatic detection processing
-                'applied': False,     # Legacy field (kept for compatibility)
+                'applied': False,
                 'bbox': event.get('bbox', [])
             }
             
@@ -60,3 +59,15 @@ class FirebaseSender:
         except Exception as e:
             print(f"❌ Firebase send error: {e}")
             return False
+
+    def process_events(self, events):
+        for event in events:
+            self.total_events += 1
+            detected_brand = extract_brand(event['label'])
+            
+            # ⭐ Add device_id to event
+            event['device_id'] = self.current_device_id
+            event['detected_brand'] = detected_brand
+            
+            if self.firebase_sender:
+                self.firebase_sender.send_event(event)
